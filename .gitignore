@@ -1,0 +1,17 @@
+# Build folders
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+Makefile
+cmake_install.cmake
+*.o
+*.obj
+*.exe
+*.a
+*.dll
+
+# IDEs
+.vscode/
+*.sln
+*.user
+*.VC.db
