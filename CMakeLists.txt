@@ -5,7 +5,7 @@ project(ALBO
     LANGUAGES CXX
 )
 
-# ---- C++ Standard ----
+# ---- C++20 ----
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -17,10 +17,19 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# ---- MSYS2 / MinGW OpenSSL hinting ----
+if (WIN32 AND NOT MSVC)
+    # Common MSYS2 MinGW OpenSSL locations
+    list(APPEND CMAKE_PREFIX_PATH
+        "C:/msys64/mingw64"
+        "C:/msys64/mingw32"
+    )
+endif()
+
 # ---- OpenSSL ----
 find_package(OpenSSL REQUIRED)
 
-# ---- Sources ----
+# ---- Executable ----
 add_executable(ALBO
     src/main.cpp
     src/crypto.cpp
@@ -34,7 +43,7 @@ target_include_directories(ALBO
         ${PROJECT_SOURCE_DIR}/include
 )
 
-# ---- Link libraries ----
+# ---- Link OpenSSL ----
 # Order matters for MinGW
 target_link_libraries(ALBO
     PRIVATE
@@ -49,7 +58,7 @@ else()
     target_compile_definitions(ALBO PRIVATE ALBO_PLATFORM_UNIX)
 endif()
 
-# ---- Output directory ----
+# ---- Output ----
 set_target_properties(ALBO PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
 )
