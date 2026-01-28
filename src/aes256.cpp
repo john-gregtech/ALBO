@@ -26,8 +26,8 @@ namespace prototype_functions {
         if (!ctx)
             throw std::runtime_error("EVP_CIPHER_CTX_new has failed");
         
-        unsigned int len = 0;
-        unsigned int ciphertext_len = 0;
+        int len = 0;
+        int ciphertext_len = 0;
 
         if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()) != 1) {
             EVP_CIPHER_CTX_free(ctx);
@@ -61,8 +61,8 @@ namespace prototype_functions {
         EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
         if (!ctx) 
             throw std::runtime_error("EVP_CIPHER_CTX_new has failed");
-        unsigned int len = 0;
-        unsigned int plaintext_len = 0;
+        int len = 0;
+        int plaintext_len = 0;
 
         if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()) != 1) {
             EVP_CIPHER_CTX_free(ctx);
