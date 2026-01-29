@@ -8,7 +8,8 @@ namespace prototype_functions {
         X25519KeyPair kp{};
 
         EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_X25519, nullptr);
-        if (!ctx) throw std::runtime_error("CTX alloc failed");
+        if (!ctx) 
+            throw std::runtime_error("CTX alloc failed");
 
         if (EVP_PKEY_keygen_init(ctx) <= 0)
             throw std::runtime_error("keygen init failed");
