@@ -11,7 +11,7 @@ namespace prototype_functions {
         if (SHA256_Init(&ctx) != 1) {
             throw std::runtime_error("SHA256_Init has failed");
         }
-        if (SHA256_Update(&ctx, input.c_str(), input.size()) != 1) {
+        if (SHA256_Update(&ctx, input.data(), input.size()) != 1) {
             throw std::runtime_error("SHA256_Update has failed");
         }     
         if (SHA256_Final(hash.data(), &ctx) != 1) {
