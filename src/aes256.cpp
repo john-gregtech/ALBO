@@ -1,7 +1,7 @@
 #include "cryptowrapper/aes256.h"
 
 namespace prototype_functions {
-    
+
     std::array<unsigned char, 16> generate_initialization_vector() {
         std::array<unsigned char, 16> iv{};
         if (RAND_bytes(iv.data(), 16) != 1) 
@@ -15,7 +15,6 @@ namespace prototype_functions {
             std::cout << "error at key generation\n";
         return key;
     }
-    
     std::vector<unsigned char> aes_encrypt(
         const std::vector<unsigned char>& plaintext, 
         const std::array<unsigned char, 32>& key, 
