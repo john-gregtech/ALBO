@@ -34,7 +34,7 @@ std::string hexvectortostring(const std::vector<unsigned char>& data) {
 }
 int main() {
     std::cout << "test\n";
-    std::vector<unsigned char> my_pepper = prototype_functions::pepperGen(32); //crashing here
+    std::vector<unsigned char> my_pepper = prototype_functions::randomByteGen(32); //crashing here
     std::cout << "test\n";
     std::cout << hexvectortostring(my_pepper) << "\n";
     std::cout << "test\n";
