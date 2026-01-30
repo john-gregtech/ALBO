@@ -2,10 +2,10 @@
 
 namespace prototype_functions {
 
-    std::array<unsigned char, 16> generate_initialization_vector() {
-        std::array<unsigned char, 16> iv{};
-        if (RAND_bytes(iv.data(), 16) != 1) 
-            std::cout << "error at initialization vector generation\n";
+    std::array<unsigned char, EVP_MAX_IV_LENGTH> generate_initialization_vector() {
+        std::array<unsigned char, EVP_MAX_IV_LENGTH> iv{};
+        if (RAND_bytes(iv.data(), EVP_MAX_IV_LENGTH) != 1) 
+            throw std::runtime_error("Error at RAND_bytes");
         return iv;
     }
     std::array<unsigned char, 32> generate_key() {

@@ -4,6 +4,9 @@
 #include <array>
 #include <string>
 #include <iostream>
+
+
+
 namespace prototype_functions {
     std::array<unsigned char, SHA256_DIGEST_LENGTH> sha256_hash(
         const std::string& input
