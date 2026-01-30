@@ -7,6 +7,7 @@
 #include <iomanip>
 
 #include "cryptowrapper/sha256.h"
+#include "cryptowrapper/password.h"
 
 template <unsigned int arrayLength> 
 std::string hexarraytostring(const std::array<unsigned char, arrayLength>& data) {
@@ -20,7 +21,25 @@ std::string hexarraytostring(const std::array<unsigned char, arrayLength>& data)
 
     return ss.str();
 }
+std::string hexvectortostring(const std::vector<unsigned char>& data) {
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0');
+
+    for (unsigned int i = 0; i < data.size(); ++i) {
+        // Cast to int to print numeric value instead of character
+        ss << std::setw(2) << static_cast<int>(data[i]);
+    }
+
+    return ss.str();
+}
 int main() {
+    std::cout << "test\n";
+    std::vector<unsigned char> my_pepper = prototype_functions::pepperGen(32); //crashing here
+    std::cout << "test\n";
+    std::cout << hexvectortostring(my_pepper) << "\n";
+    std::cout << "test\n";
+    
+
     std::string message = "This is a handshake";
     std::getline(std::cin, message);
     std::string stringhash{};
