@@ -33,9 +33,10 @@ find_package(OpenSSL REQUIRED)
 # ---- Executable ----
 add_executable(ALBO
     src/main.cpp
-    src/crypto.cpp
+    src/sha256.cpp
     src/aes256.cpp
     src/X25519.cpp
+    src/password.cpp
 )
 
 # ---- Includes ----

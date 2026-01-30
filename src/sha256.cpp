@@ -1,4 +1,4 @@
-#include "cryptowrapper/crypto.h"
+#include "cryptowrapper/sha256.h"
 
 namespace prototype_functions {
     std::array<unsigned char, SHA256_DIGEST_LENGTH> sha256_hash(
