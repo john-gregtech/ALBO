@@ -1,10 +1,12 @@
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 cmake_minimum_required(VERSION 3.16)
 
 project(ALBO
     VERSION 1.0.0
     LANGUAGES CXX
 )
+
+# ---- Export compile_commands.json ----
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ---- C++20 ----
 set(CMAKE_CXX_STANDARD 20)
@@ -18,22 +20,17 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# ---- MSYS2 / MinGW OpenSSL hinting ----
-if (WIN32 AND NOT MSVC)
-    # Common MSYS2 MinGW OpenSSL locations
-    list(APPEND CMAKE_PREFIX_PATH
-        "C:/msys64/mingw64"
-        "C:/msys64/mingw32"
-    )
-endif()
+# ---- OpenSSL discovery ----
+# Prefer config packages, fall back to module mode
+set(OpenSSL_USE_STATIC_LIBS OFF)
+set(OpenSSL_USE_MSVC_STATIC_RT OFF)
 
-# ---- OpenSSL ----
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 # ---- Executable ----
 add_executable(ALBO
     src/main.cpp
-    src/crypto.cpp
+    src/sha256.cpp
     src/aes256.cpp
     src/X25519.cpp
     src/password.cpp
@@ -46,17 +43,15 @@ target_include_directories(ALBO
 )
 
 # ---- Link OpenSSL ----
-# Order matters for MinGW
 target_link_libraries(ALBO
     PRIVATE
         OpenSSL::Crypto
-        OpenSSL::SSL
 )
 
 # ---- Platform defines ----
 if (WIN32)
     target_compile_definitions(ALBO PRIVATE ALBO_PLATFORM_WINDOWS)
-else()
+elseif (UNIX)
     target_compile_definitions(ALBO PRIVATE ALBO_PLATFORM_UNIX)
 endif()
 
