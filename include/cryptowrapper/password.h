@@ -7,5 +7,10 @@
 #include <iostream>
 
 namespace prototype_functions {
-    std::vector<unsigned char> randomByteGen(unsigned int randomLengthSize);
+    std::vector<uint8_t> randomByteGen(uint32_t randomLengthSize);
+    std::vector<uint8_t> generatePassword(
+        const std::vector<uint8_t>& password,
+        const std::vector<uint8_t>& salt,
+        const std::vector<uint8_t>& pepper 
+    );
 }

@@ -33,11 +33,15 @@ std::string hexvectortostring(const std::vector<unsigned char>& data) {
     return ss.str();
 }
 int main() {
-    std::cout << "test\n";
-    std::vector<unsigned char> my_pepper = prototype_functions::randomByteGen(32); //crashing here
-    std::cout << "test\n";
+    std::vector<unsigned char> my_pepper{}; 
+    std::vector<unsigned char> my_salt{}; 
+    std::vector<unsigned char> my_password{};
+    my_pepper = prototype_functions::randomByteGen(10);
+    my_salt = prototype_functions::randomByteGen(2);
+    my_password = prototype_functions::randomByteGen(2);
+
+    prototype_functions::generatePassword(my_password, my_salt, my_pepper);
     std::cout << hexvectortostring(my_pepper) << "\n";
-    std::cout << "test\n";
     
 
     std::string message = "This is a handshake";
