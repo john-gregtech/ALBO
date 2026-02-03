@@ -47,6 +47,8 @@ target_include_directories(ALBO
 target_link_libraries(ALBO
     PRIVATE
         OpenSSL::Crypto
+        user32
+        kernal32
 )
 
 # ---- Platform defines ----
