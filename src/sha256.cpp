@@ -1,3 +1,4 @@
+
 #include "cryptowrapper/sha256.h"
 
 namespace prototype_functions {

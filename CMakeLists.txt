@@ -36,19 +36,51 @@ add_executable(ALBO
     src/X25519.cpp
     src/password.cpp
 )
+add_executable(CLIENT
+    src/sha256.cpp
+    src/aes256.cpp
+    src/X25519.cpp
+    src/password.cpp
+
+    src/network/win/client.cpp
+)
+add_executable(SERVER
+    src/sha256.cpp
+    src/aes256.cpp
+    src/X25519.cpp
+    src/password.cpp
+
+    src/network/win/server.cpp
+)
+
 
 # ---- Includes ----
 target_include_directories(ALBO
     PRIVATE
         ${PROJECT_SOURCE_DIR}/include
 )
-
+target_include_directories(CLIENT
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+target_include_directories(SERVER
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
 # ---- Link OpenSSL ----
 target_link_libraries(ALBO
     PRIVATE
         OpenSSL::Crypto
+)
+target_link_libraries(CLIENT
+    PRIVATE
+        OpenSSL::Crypto
         user32
-        kernal32
+)
+target_link_libraries(SERVER
+    PRIVATE
+        OpenSSL::Crypto
+        user32
 )
 
 # ---- Platform defines ----
