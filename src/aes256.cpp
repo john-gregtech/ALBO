@@ -2,31 +2,31 @@
 
 namespace prototype_functions {
 
-    std::array<unsigned char, EVP_MAX_IV_LENGTH> generate_initialization_vector() {
-        std::array<unsigned char, EVP_MAX_IV_LENGTH> iv{};
+    std::array<uint8_t, EVP_MAX_IV_LENGTH> generate_initialization_vector() {
+        std::array<uint8_t, EVP_MAX_IV_LENGTH> iv{};
         if (RAND_bytes(iv.data(), EVP_MAX_IV_LENGTH) != 1) 
             throw std::runtime_error("Error at RAND_bytes");
         return iv;
     }
-    std::array<unsigned char, 32> generate_key() {
-        std::array<unsigned char, 32> key{};
+    std::array<uint8_t, 32> generate_key() {
+        std::array<uint8_t, 32> key{};
         
         if (RAND_bytes(key.data(), 32) != 1)
             std::cout << "error at key generation\n";
         return key;
     }
-    std::vector<unsigned char> aes_encrypt(
-        const std::vector<unsigned char>& plaintext, 
-        const std::array<unsigned char, 32>& key, 
-        const std::array<unsigned char, 16>& iv
+    std::vector<uint8_t> aes_encrypt(
+        const std::vector<uint8_t>& plaintext, 
+        const std::array<uint8_t, 32>& key, //idk the name for it so its a magic number but 32 is the keylength in bytes
+        const std::array<uint8_t, 16>& iv //same as above but 16 is the byte length for a chunk for aes256
     ) {
-        std::vector<unsigned char> ciphertext(plaintext.size() + EVP_CIPHER_block_size(EVP_aes_256_cbc()));
+        std::vector<uint8_t> ciphertext(plaintext.size() + EVP_CIPHER_block_size(EVP_aes_256_cbc()));
         EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
         if (!ctx)
             throw std::runtime_error("EVP_CIPHER_CTX_new has failed");
         
-        int len = 0;
-        int ciphertext_len = 0;
+        int32_t len = 0;
+        int32_t ciphertext_len = 0;
 
         if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()) != 1) {
             EVP_CIPHER_CTX_free(ctx);
@@ -50,18 +50,18 @@ namespace prototype_functions {
         
         return ciphertext;
     }
-    std::vector<unsigned char> aes_decrypt(
-        const std::vector<unsigned char>& ciphertext,
-        const std::array<unsigned char, 32>& key,
-        const std::array<unsigned char, 16>& iv
+    std::vector<uint8_t> aes_decrypt(
+        const std::vector<uint8_t>& ciphertext,
+        const std::array<uint8_t, 32>& key,
+        const std::array<uint8_t, 16>& iv
     ) {
-        std::vector<unsigned char> plaintext(ciphertext.size());
+        std::vector<uint8_t> plaintext(ciphertext.size());
 
         EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
         if (!ctx) 
             throw std::runtime_error("EVP_CIPHER_CTX_new has failed");
-        int len = 0;
-        int plaintext_len = 0;
+        int32_t len = 0;
+        int32_t plaintext_len = 0;
 
         if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key.data(), iv.data()) != 1) {
             EVP_CIPHER_CTX_free(ctx);

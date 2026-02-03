@@ -4,10 +4,10 @@
 namespace prototype_functions {
     //OLD uses illedgidly decaricated sha256 library
     /*
-    std::array<unsigned char, SHA256_DIGEST_LENGTH> sha256_hash(
+    std::array<uint8_t, SHA256_DIGEST_LENGTH> sha256_hash(
         const std::string& input
     ) {
-        std::array<unsigned char, SHA256_DIGEST_LENGTH> hash{};
+        std::array<uint8_t, SHA256_DIGEST_LENGTH> hash{};
 
         SHA256_CTX ctx;
         
@@ -24,11 +24,11 @@ namespace prototype_functions {
         return hash;
     }
     */
-    std::array<unsigned char, 32> sha256_hash(
+    std::array<uint8_t, 32> sha256_hash(
         const std::string& input
     ) {
-        std::array<unsigned char, 32> hash{};
-        unsigned int hash_len = 0;
+        std::array<uint8_t, 32> hash{}; //magic number but is the hash chunk length for 256 sha
+        uint32_t hash_len = 0;
 
         EVP_MD_CTX* ctx = EVP_MD_CTX_new();
         if (!ctx)

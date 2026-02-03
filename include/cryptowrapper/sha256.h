@@ -5,10 +5,8 @@
 #include <string>
 #include <iostream>
 
-
-
 namespace prototype_functions {
-    std::array<unsigned char, 32> sha256_hash(
+    std::array<uint8_t, 32> sha256_hash(
         const std::string& input
     );
 }

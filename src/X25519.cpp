@@ -17,7 +17,7 @@ namespace prototype_functions {
         if (EVP_PKEY_keygen(ctx, &pkey) <= 0)
             throw std::runtime_error("keygen failed");
 
-        size_t len = 32;
+        size_t len = 32;//32 bytes is the key length for x25519
         EVP_PKEY_get_raw_private_key(pkey, kp.priv.data(), &len);
         EVP_PKEY_get_raw_public_key(pkey, kp.pub.data(), &len);
 
@@ -26,11 +26,11 @@ namespace prototype_functions {
 
         return kp;
     }
-    std::array<unsigned char, 32> x25519_shared_secret(
-        const std::array<unsigned char, 32>& my_priv,
-        const std::array<unsigned char, 32>& peer_pub
+    std::array<uint8_t, 32> x25519_shared_secret( //32 bytes is the key length for x25519
+        const std::array<uint8_t, 32>& my_priv,
+        const std::array<uint8_t, 32>& peer_pub
     ) {
-        std::array<unsigned char, 32> secret{};
+        std::array<uint8_t, 32> secret{};
 
         EVP_PKEY* priv = EVP_PKEY_new_raw_private_key(
             EVP_PKEY_X25519, nullptr, my_priv.data(), 32);
