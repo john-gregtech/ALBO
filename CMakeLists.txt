@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.16)
 
 project(ALBO
@@ -28,7 +27,7 @@ set(OpenSSL_USE_MSVC_STATIC_RT OFF)
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
-# ---- Executable ----
+# ---- Executables ----
 add_executable(ALBO
     src/main.cpp
     src/sha256.cpp
@@ -36,61 +35,81 @@ add_executable(ALBO
     src/X25519.cpp
     src/password.cpp
 )
-add_executable(CLIENT
+
+add_executable(WINCLIENT
     src/sha256.cpp
     src/aes256.cpp
     src/X25519.cpp
     src/password.cpp
-
     src/network/win/client.cpp
 )
-add_executable(SERVER
+
+add_executable(WINSERVER
     src/sha256.cpp
     src/aes256.cpp
     src/X25519.cpp
     src/password.cpp
-
     src/network/win/server.cpp
 )
 
-
-# ---- Includes ----
+# ---- Include directories ----
 target_include_directories(ALBO
     PRIVATE
         ${PROJECT_SOURCE_DIR}/include
 )
-target_include_directories(CLIENT
-    PRIVATE
-        ${PROJECT_SOURCE_DIR}/include
-)
-target_include_directories(SERVER
-    PRIVATE
-        ${PROJECT_SOURCE_DIR}/include
-)
-# ---- Link OpenSSL ----
+
+if(WIN32)
+    target_include_directories(WINCLIENT
+        PRIVATE
+            ${PROJECT_SOURCE_DIR}/include
+    )
+    target_include_directories(WINSERVER
+        PRIVATE
+            ${PROJECT_SOURCE_DIR}/include
+    )
+elseif(UNIX)
+    # for unix later
+endif()
+
+# ---- Link libraries ----
 target_link_libraries(ALBO
     PRIVATE
         OpenSSL::Crypto
 )
-target_link_libraries(CLIENT
-    PRIVATE
-        OpenSSL::Crypto
-        user32
-)
-target_link_libraries(SERVER
-    PRIVATE
-        OpenSSL::Crypto
-        user32
-)
+
+if(WIN32)
+    target_link_libraries(WINCLIENT
+        PRIVATE
+            OpenSSL::Crypto
+            user32
+            kernel32
+    )
+    target_link_libraries(WINSERVER
+        PRIVATE
+            OpenSSL::Crypto
+            user32
+            kernel32
+    )
+elseif(UNIX)
+    # same as above
+endif()
 
 # ---- Platform defines ----
-if (WIN32)
+if(WIN32)
     target_compile_definitions(ALBO PRIVATE ALBO_PLATFORM_WINDOWS)
-elseif (UNIX)
+elseif(UNIX)
     target_compile_definitions(ALBO PRIVATE ALBO_PLATFORM_UNIX)
 endif()
 
-# ---- Output ----
+# ---- Output directories ----
 set_target_properties(ALBO PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
+)
+
+set_target_properties(WINCLIENT PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
+)
+
+set_target_properties(WINSERVER PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
 )
