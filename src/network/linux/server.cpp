@@ -31,6 +31,41 @@ public:
         return *this;
     }
 };
+class Socket_ex {
+private:
+    int32_t file_descriptor = 0;
+public:
+    explicit Socket_ex(int32_t _file_descriptor = -1) {
+        file_descriptor = _file_descriptor;
+    }
+    ~Socket_ex() {
+        if (file_descriptor != -1)
+            close(file_descriptor);
+    }
+    int32_t get() const {
+        return file_descriptor;
+    }
+    void reset(int32_t _file_descriptor = -1) {
+        if (file_descriptor != -1)
+            close(file_descriptor);
+        file_descriptor = _file_descriptor;        
+    }
+    Socket_ex(const Socket_ex&) = delete;
+    Socket_ex& operator=(const Socket_ex&) = delete;
+
+    Socket_ex(Socket_ex&& other) noexcept {
+        file_descriptor = other.file_descriptor;
+        other.file_descriptor = -1;
+    }
+    Socket_ex& operator=(Socket_ex&& other) noexcept {
+        if (this != &other) {
+            reset(other.file_descriptor);
+            other.file_descriptor = -1;
+        }
+        return *this;
+    }
+};
+
 
 int main() {
     constexpr int PORT = 4000;
