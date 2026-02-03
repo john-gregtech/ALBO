@@ -83,12 +83,14 @@ if(WIN32)
             OpenSSL::Crypto
             user32
             kernel32
+            ws2_32
     )
     target_link_libraries(WINSERVER
         PRIVATE
             OpenSSL::Crypto
             user32
             kernel32
+            ws2_32
     )
 elseif(UNIX)
     # same as above
