@@ -36,21 +36,39 @@ add_executable(ALBO
     src/password.cpp
 )
 
-add_executable(WINCLIENT
-    src/sha256.cpp
-    src/aes256.cpp
-    src/X25519.cpp
-    src/password.cpp
-    src/network/win/client.cpp
-)
+if (WIN32)
+    add_executable(WINCLIENT
+        src/sha256.cpp
+        src/aes256.cpp
+        src/X25519.cpp
+        src/password.cpp
+        src/network/win/client.cpp
+    )
 
-add_executable(WINSERVER
-    src/sha256.cpp
-    src/aes256.cpp
-    src/X25519.cpp
-    src/password.cpp
-    src/network/win/server.cpp
-)
+    add_executable(WINSERVER
+        src/sha256.cpp
+        src/aes256.cpp
+        src/X25519.cpp
+        src/password.cpp
+        src/network/win/server.cpp
+    )
+elseif (UNIX)
+    add_executable(LINUXCLIENT
+        src/sha256.cpp
+        src/aes256.cpp
+        src/X25519.cpp
+        src/password.cpp
+        src/network/linux/client.cpp
+    )
+
+    add_executable(LINUXSERVER
+        src/sha256.cpp
+        src/aes256.cpp
+        src/X25519.cpp
+        src/password.cpp
+        src/network/linux/server.cpp
+    )
+endif()
 
 # ---- Include directories ----
 target_include_directories(ALBO
@@ -58,7 +76,7 @@ target_include_directories(ALBO
         ${PROJECT_SOURCE_DIR}/include
 )
 
-if(WIN32)
+if (WIN32)
     target_include_directories(WINCLIENT
         PRIVATE
             ${PROJECT_SOURCE_DIR}/include
@@ -67,8 +85,16 @@ if(WIN32)
         PRIVATE
             ${PROJECT_SOURCE_DIR}/include
     )
-elseif(UNIX)
+elseif (UNIX)
     # for unix later
+    target_include_directories(LINUXCLIENT
+        PRIVATE
+            ${PROJECT_SOURCE_DIR}/include
+    )
+    target_include_directories(LINUXSERVER
+        PRIVATE
+            ${PROJECT_SOURCE_DIR}/include
+    )
 endif()
 
 # ---- Link libraries ----
@@ -77,7 +103,7 @@ target_link_libraries(ALBO
         OpenSSL::Crypto
 )
 
-if(WIN32)
+if (WIN32)
     target_link_libraries(WINCLIENT
         PRIVATE
             OpenSSL::Crypto
@@ -92,14 +118,22 @@ if(WIN32)
             kernel32
             ws2_32
     )
-elseif(UNIX)
+elseif (UNIX)
     # same as above
+    target_link_libraries(LINUXCLIENT
+        PRIVATE
+            OpenSSL::Crypto
+    )
+    target_link_libraries(LINUXSERVER
+        PRIVATE
+            OpenSSL::Crypto
+    )
 endif()
 
 # ---- Platform defines ----
-if(WIN32)
+if (WIN32)
     target_compile_definitions(ALBO PRIVATE ALBO_PLATFORM_WINDOWS)
-elseif(UNIX)
+elseif (UNIX)
     target_compile_definitions(ALBO PRIVATE ALBO_PLATFORM_UNIX)
 endif()
 
@@ -107,11 +141,20 @@ endif()
 set_target_properties(ALBO PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
 )
+if (WIN32)
+    set_target_properties(WINCLIENT PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
+    )
 
-set_target_properties(WINCLIENT PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
-)
+    set_target_properties(WINSERVER PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
+    )
+elseif (UNIX) 
+    set_target_properties(LINUXCLIENT PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
+    )
 
-set_target_properties(WINSERVER PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
-)
+    set_target_properties(LINUXSERVER PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
+    )
+endif(`)
