@@ -1,0 +1,4 @@
+
+pacman -S mingw-w64-x86_64-openssl
+pacman -S mingw-w64-x86_64-argon2
+pacman -S mingw-w64-x86_64-qt6
