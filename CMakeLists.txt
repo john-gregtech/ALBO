@@ -34,6 +34,7 @@ add_executable(ALBO
     src/aes256.cpp
     src/X25519.cpp
     src/password.cpp
+    src/argon2id.cpp
 )
 
 if (WIN32)
@@ -101,6 +102,7 @@ endif()
 target_link_libraries(ALBO
     PRIVATE
         OpenSSL::Crypto
+        argon2
 )
 
 if (WIN32)
@@ -157,4 +159,4 @@ elseif (UNIX)
     set_target_properties(LINUXSERVER PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
     )
-endif(`)
+endif()

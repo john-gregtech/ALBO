@@ -1,56 +1,57 @@
 #include <iostream>
-#include <vector>
-#include <array>
-#include <sstream>
-#include <stdexcept>
-#include <bits/stdc++.h>
-#include <iomanip>
+#include <string>
 
-#include "cryptowrapper/sha256.h"
-#include "cryptowrapper/password.h"
+extern "C" {
+#include <argon2.h>
+}
 
-template <unsigned int arrayLength> 
-std::string hexarraytostring(const std::array<unsigned char, arrayLength>& data) {
-    std::stringstream ss;
-    ss << std::hex << std::setfill('0');
+int main()
+{
+    const std::string password = "testpassword";
 
-    for (unsigned int i = 0; i < arrayLength; ++i) {
-        // Cast to int to print numeric value instead of character
-        ss << std::setw(2) << static_cast<int>(data[i]);
+    // Argon2 parameters
+    const uint32_t t_cost = 2;          // iterations
+    const uint32_t m_cost = 1 << 16;    // 64 MB
+    const uint32_t parallelism = 1;
+    const size_t salt_len = 16;
+    const size_t hash_len = 32;
+
+    uint8_t salt[salt_len] = {0}; // quick & dirty zero salt (DO NOT use in production)
+
+    char encoded[128];
+
+    int result = argon2id_hash_encoded(
+        t_cost,
+        m_cost,
+        parallelism,
+        password.c_str(),
+        password.size(),
+        salt,
+        salt_len,
+        hash_len,
+        encoded,
+        sizeof(encoded)
+    );
+
+    if (result != ARGON2_OK) {
+        std::cerr << "Hashing failed: "
+                  << argon2_error_message(result) << "\n";
+        return 1;
     }
 
-    return ss.str();
-}
-std::string hexvectortostring(const std::vector<unsigned char>& data) {
-    std::stringstream ss;
-    ss << std::hex << std::setfill('0');
+    std::cout << "Encoded hash:\n" << encoded << "\n";
 
-    for (unsigned int i = 0; i < data.size(); ++i) {
-        // Cast to int to print numeric value instead of character
-        ss << std::setw(2) << static_cast<int>(data[i]);
-    }
+    // Verify
+    int verify = argon2id_verify(
+        encoded,
+        password.c_str(),
+        password.size()
+    );
 
-    return ss.str();
-}
-int main() {
-    std::vector<unsigned char> my_pepper{}; 
-    std::vector<unsigned char> my_salt{}; 
-    std::vector<unsigned char> my_password{};
-    my_pepper = prototype_functions::randomByteGen(10);
-    my_salt = prototype_functions::randomByteGen(2);
-    my_password = prototype_functions::randomByteGen(2);
+    if (verify == ARGON2_OK)
+        std::cout << "Verification successful.\n";
+    else
+        std::cout << "Verification failed.\n";
 
-    prototype_functions::generatePassword(my_password, my_salt, my_pepper);
-    std::cout << hexvectortostring(my_pepper) << "\n";
-    
-
-    std::string message = "This is a handshake";
-    std::getline(std::cin, message);
-    std::string stringhash{};
-    std::array<unsigned char, 32> hash{};
-
-    hash = prototype_functions::sha256_hash(message);
-
-    stringhash = hexarraytostring<32>(hash);
-    std::cout << stringhash << std::endl;
+    return 0;
 }
