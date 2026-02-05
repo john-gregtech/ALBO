@@ -1,123 +1,110 @@
 // server.cpp super chopped ai generated code
-#include <arpa/inet.h>
-#include <cstring>
 #include <iostream>
-#include <netinet/in.h>
 #include <string>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <fstream>
+#include <vector>
+#include <math.h>
+#include <thread>
+#include <mutex>
 
-// RAII wrapper for a socket file descriptor
-class Socket {
-    int fd_;
-public:
-    explicit Socket(int fd = -1) : fd_(fd) {}
-    ~Socket() { if (fd_ != -1) close(fd_); }
-    int get() const { return fd_; }
-    void reset(int fd = -1) { 
-        if (fd_ != -1) close(fd_); 
-        fd_ = fd; 
-    }
-    // disable copy
-    Socket(const Socket&) = delete;
-    Socket& operator=(const Socket&) = delete;
-    // enable move
-    Socket(Socket&& other) noexcept : fd_(other.fd_) { other.fd_ = -1; }
-    Socket& operator=(Socket&& other) noexcept { 
-        if (this != &other) { 
-            reset(other.fd_); 
-            other.fd_ = -1; 
-        }
-        return *this;
-    }
-};
-class Socket_ex {
+//basically it needs to be threaded so there will be a producer and consumer thread
+//consumer will be the main thread
+//producer will be the file reader thread
+//seekg to got eg seekg(-1, std::ios::cur) is move back one byte
+
+class FileStream {
 private:
-    int32_t file_descriptor = 0;
-public:
-    explicit Socket_ex(int32_t _file_descriptor = -1) {
-        file_descriptor = _file_descriptor;
-    }
-    ~Socket_ex() {
-        if (file_descriptor != -1)
-            close(file_descriptor);
-    }
-    int32_t get() const {
-        return file_descriptor;
-    }
-    void reset(int32_t _file_descriptor = -1) {
-        if (file_descriptor != -1)
-            close(file_descriptor);
-        file_descriptor = _file_descriptor;        
-    }
-    Socket_ex(const Socket_ex&) = delete;
-    Socket_ex& operator=(const Socket_ex&) = delete;
+    static constexpr size_t chunkSize = 16 * 1024;
 
-    Socket_ex(Socket_ex&& other) noexcept {
-        file_descriptor = other.file_descriptor;
-        other.file_descriptor = -1;
+    std::string fn = "";
+    std::ifstream file;
+
+    std::vector<int> readBuffer;       //buffer that reads the file
+    std::vector<int> transferBuffer;   //this one takes the data from readBuffer
+    
+    bool transferLock = false;
+    bool readDone = false;
+    size_t currentChunk     = 0; //done
+    size_t chunkCount       = 0; //done
+    size_t lastChunkSize    = 0; //done
+    size_t totalFileSize    = 0; //done
+
+    size_t getFileSize() {
+        file.seekg(0, std::ios::end);
+        return static_cast<size_t>(file.tellg());
     }
-    Socket_ex& operator=(Socket_ex&& other) noexcept {
-        if (this != &other) {
-            reset(other.file_descriptor);
-            other.file_descriptor = -1;
+    void calculateChunkData() {
+        totalFileSize = getFileSize();
+        chunkCount = static_cast<size_t>(std::ceil(static_cast<double>(totalFileSize)/static_cast<double>(chunkSize)));
+        lastChunkSize = totalFileSize-(chunkCount-1)*chunkSize;
+    }
+
+    //This function will be the function to be called as a thread
+    void scanChunk() {
+        //goto start
+        file.seekg(0, std::ios::beg);
+        //first which chunk are we on
+        //if chunkcount is 1 then lastchunksize is the first chunk so then we will use that
+        //calculate chunk data was pre called instantly after the file was opened
+        for (currentChunk = 1; currentChunk <= chunkCount; ++currentChunk) {
+            //we have the parts that read now we need to actually put it into the buffer
+            //first we clear the buffer
+            readDone = false;
+            readBuffer.clear();
+
+            //std::cout << currentChunk << std::endl;
+            if (currentChunk == chunkCount) {
+                readBuffer.resize(lastChunkSize);
+                for (size_t byteCursor = 0; byteCursor < lastChunkSize; ++byteCursor) {
+                    readBuffer.at(byteCursor) = file.get();
+                    std::cout << readBuffer.at(byteCursor);
+                }
+            } else {
+                readBuffer.resize(chunkSize);
+                for (size_t byteCursor = 0; byteCursor < chunkSize; ++byteCursor) {
+                    readBuffer.at(byteCursor) = file.get();
+                    std::cout << readBuffer.at(byteCursor);
+                }
+            }
+            readDone = true;
+            //now we have a full buffer
+            //this is the point where we wait
+            std::cout << "At lock\n";
+            while (transferLock) {
+                //wait code
+                std::this_thread::sleep_for(std::chrono::microseconds(2));
+            }
+            transferBuffer.assign(readBuffer.begin(), readBuffer.end());
+            
+            transferLock = true; //imagine it gets checked now
+            std::cout << "Past lock\n";
         }
-        return *this;
+        
     }
+public:
+    explicit FileStream(const std::string& _fn) : file(_fn, std::ios::binary | std::ios::ate) {
+        fn = _fn;
+        if (!file.is_open()) {
+            std::cerr << "Error, File failed to open somehow";
+        }
+        std::cerr << "working and good\n";
+        calculateChunkData();
+        scanChunk();
+    }
+    ~FileStream() {
+        file.close();
+        if (!file.is_open()) {
+            std::cerr << "File has been closed\n";
+        } else {
+            std::cerr << "Not closed oh o\n";
+        }
+        //also close threads here incase they are still runnning
+    }
+    
 };
 
 
 int main() {
-    constexpr int PORT = 4000;
-    Socket server_fd(::socket(AF_INET, SOCK_STREAM, 0));
-    if (server_fd.get() == -1) {
-        perror("socket");
-        return 1;
-    }
-
-    int opt = 1;
-    if (setsockopt(server_fd.get(), SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
-        perror("setsockopt");
-        return 1;
-    }
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(PORT);
-
-    if (bind(server_fd.get(), reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == -1) {
-        perror("bind");
-        return 1;
-    }
-
-    if (listen(server_fd.get(), 10) == -1) {
-        perror("listen");
-        return 1;
-    }
-
-    std::cout << "Server listening on port " << PORT << "...\n";
-
-    while (true) {
-        sockaddr_in client_addr{};
-        socklen_t client_len = sizeof(client_addr);
-        Socket client_fd(::accept(server_fd.get(), reinterpret_cast<sockaddr*>(&client_addr), &client_len));
-        if (client_fd.get() == -1) {
-            perror("accept");
-            continue;
-        }
-
-        char buffer[1024];
-        ssize_t n = read(client_fd.get(), buffer, sizeof(buffer)-1);
-        if (n > 0) {
-            buffer[n] = '\0';
-            std::cout << "Received: " << buffer << "\n";
-
-            std::string reply = "Echo: ";
-            reply += buffer;
-            send(client_fd.get(), reply.c_str(), reply.size(), 0);
-        }
-    }
-
-    return 0;
+    FileStream fs("yummy.txt");
+    
 }
