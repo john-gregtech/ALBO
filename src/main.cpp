@@ -16,6 +16,7 @@ int main()
     const size_t salt_len = 16;
     const size_t hash_len = 32;
 
+    
     uint8_t salt[salt_len] = {0}; // quick & dirty zero salt (DO NOT use in production)
 
     char encoded[128];
