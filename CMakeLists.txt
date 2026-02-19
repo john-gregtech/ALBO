@@ -59,6 +59,7 @@ elseif (UNIX)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/network/universal/professionalprovider.cpp
         src/network/linux/client.cpp
     )
 
@@ -67,6 +68,7 @@ elseif (UNIX)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/network/universal/professionalprovider.cpp
         src/network/linux/server.cpp
     )
 endif()
