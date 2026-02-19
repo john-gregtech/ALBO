@@ -12,12 +12,6 @@
 #include <cstring>
 #include "network/universal/professionalprovider.h"
 
-//informal version not encrypted
-
-//class here is a overall packet class this will have a from and to address and etc
-
-
-//stopwatch is ai function but it doesnt matter tbh
 class Stopwatch {
     using Clock = std::chrono::steady_clock;
     Clock::time_point last_mark;
