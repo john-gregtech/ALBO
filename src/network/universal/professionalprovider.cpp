@@ -1,6 +1,29 @@
 #include "network/universal/professionalprovider.h"
 
 namespace prototype::network {
+
+
+    UUID generate_uuid_v4() {
+        std::array<uint8_t, 16> bytes{};
+
+        if (RAND_bytes(bytes.data(), bytes.size()) != 1) {
+            throw std::runtime_error("RAND_bytes failed");
+        }
+
+        // Set version (4)
+        bytes[6] = (bytes[6] & 0x0F) | 0x40;
+
+        // Set variant (RFC 4122)
+        bytes[8] = (bytes[8] & 0x3F) | 0x80;
+
+        UUID id;
+
+        std::memcpy(&id.high, bytes.data(), 8);
+        std::memcpy(&id.low,  bytes.data() + 8, 8);
+
+        return id;
+    }
+    
     MessageData::MessageData(
         uint8_t type, 
         const std::vector<uint8_t>& _data
