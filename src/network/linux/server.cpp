@@ -52,7 +52,7 @@ int main() {
     Stopwatch total;
     sw.start();
     total.start();
-    FileReadStream fs = FileReadStream("large.rar");
+    prototype::network::FileReadStream fs = prototype::network::FileReadStream("large.rar");
     fs.start_thread();
     std::vector<char> chunk{};
     // std::cout << (bool)fs->isDone() << " This is the the isDone()\n";
