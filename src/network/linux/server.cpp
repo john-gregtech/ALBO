@@ -69,7 +69,8 @@ int main() {
     std::cout << "Total Time: " << total.lap()/1000 << "us\n";
 
     
-
+    prototype::network::UUID myUUID;
+    std::cout << sizeof(myUUID) << "\n";
 
 
 }

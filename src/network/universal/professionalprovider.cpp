@@ -1,8 +1,6 @@
 #include "network/universal/professionalprovider.h"
 
 namespace prototype::network {
-    
-
     MessageData::MessageData(
         uint8_t type, 
         const std::vector<uint8_t>& _data
@@ -62,9 +60,6 @@ namespace prototype::network {
             cv.notify_one(); // Tell the worker it can read the NEXT chunk
             return 1;
         }
-
         return 0; // File is fully read
-
-        
     }
 }
