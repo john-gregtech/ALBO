@@ -1,8 +1,6 @@
 #include "network/universal/professionalprovider.h"
 
 namespace prototype::network {
-
-
     UUID generate_uuid_v4() {
         std::array<uint8_t, 16> bytes{};
 

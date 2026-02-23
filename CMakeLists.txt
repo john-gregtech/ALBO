@@ -27,6 +27,8 @@ set(OpenSSL_USE_MSVC_STATIC_RT OFF)
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
+find_package(SQLite3 REQUIRED)
+
 # ---- Executables ----
 add_executable(ALBO
     src/main.cpp
@@ -35,6 +37,7 @@ add_executable(ALBO
     src/X25519.cpp
     src/password.cpp
     src/argon2id.cpp
+    src/network/universal/database.cpp
 )
 
 if (WIN32)
@@ -104,13 +107,16 @@ endif()
 target_link_libraries(ALBO
     PRIVATE
         OpenSSL::Crypto
+        SQLite::SQLite3
         argon2
+        
 )
 
 if (WIN32)
     target_link_libraries(WINCLIENT
         PRIVATE
             OpenSSL::Crypto
+            SQLite::SQLite3
             user32
             kernel32
             ws2_32
@@ -118,6 +124,7 @@ if (WIN32)
     target_link_libraries(WINSERVER
         PRIVATE
             OpenSSL::Crypto
+            SQLite::SQLite3
             user32
             kernel32
             ws2_32
@@ -127,10 +134,12 @@ elseif (UNIX)
     target_link_libraries(LINUXCLIENT
         PRIVATE
             OpenSSL::Crypto
+            SQLite::SQLite3
     )
     target_link_libraries(LINUXSERVER
         PRIVATE
             OpenSSL::Crypto
+            SQLite::SQLite3
     )
 endif()
 
