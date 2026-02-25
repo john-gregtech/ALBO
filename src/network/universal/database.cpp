@@ -19,6 +19,7 @@ namespace prototype::database {
     }
     */
 
+    
     void execute_sql(const std::string& db_file, const std::string& sql_command)
     {
         // Toggle debug/output at compile time
