@@ -1,58 +1,75 @@
 #include <iostream>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <string>
+#include <fstream>
+#include <vector>
+#include <math.h>
+#include <thread>
+#include <mutex>
+#include <memory>
+#include <condition_variable>
+#include <format>   
+#include <cstring>
+#include "network/universal/professionalprovider.h"
 
-// #pragma comment(lib, "ws2_32.lib")
+class Stopwatch {
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point last_mark;
+
+public:
+    // Starts or resets the timer
+    void start() {
+        last_mark = Clock::now();
+    }
+
+    // Returns time since last start() or last lap() in nanoseconds
+    int64_t lap() {
+        auto now = Clock::now();
+        auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - last_mark).count();
+        last_mark = now; // Update the mark for the next lap
+        return diff;
+    }
+};
+
+
+template <typename T>
+static void printVector(const std::vector<T>& data) {
+    int j = -1;
+    for (T i : data) {
+        if (++j % 16 == 0) {
+            std::cout << " ";
+        }
+        if (j % 32 == 0) {
+            std::cout << "\n";
+        }
+        std::cout << std::format("{:02x}", (char)i) << "";
+    }
+    std::cout << "\n";
+}
 
 int main() {
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "WSAStartup failed\n";
-        return 1;
+    Stopwatch sw;
+    Stopwatch total;
+    sw.start();
+    total.start();
+    prototype::network::FileReadStream fs = prototype::network::FileReadStream("large.rar");
+    fs.start_thread();
+    std::vector<char> chunk{};
+    // std::cout << (bool)fs->isDone() << " This is the the isDone()\n";
+    sw.lap();
+    total.lap();
+    while (!fs.isDone()) {
+        fs.getTransferBuffer(chunk);
+        //std::cout << fs.getTransferBuffer(chunk) << "if fail -> ";
+        //std::cout << "CHUNK: " << sw.lap()/1000 << "us\n";
+        //std::cout << "================================================\n";
+        //printVector<char>(chunk);
+        // std::cout << "AAA" << ++i << "\n";
     }
+    std::cout << "Total Time: " << total.lap()/1000 << "us\n";
 
-    SOCKET ListenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (ListenSocket == INVALID_SOCKET) {
-        std::cerr << "Error creating socket\n";
-        WSACleanup();
-        return 1;
-    }
+    
+    prototype::network::UUID myUUID;
+    std::cout << sizeof(myUUID) << "\n";
 
-    sockaddr_in serverAddr{};
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    serverAddr.sin_port = htons(5555); // Change port if needed
 
-    if (bind(ListenSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        std::cerr << "Bind failed\n";
-        closesocket(ListenSocket);
-        WSACleanup();
-        return 1;
-    }
-
-    if (listen(ListenSocket, SOMAXCONN) == SOCKET_ERROR) {
-        std::cerr << "Listen failed\n";
-        closesocket(ListenSocket);
-        WSACleanup();
-        return 1;
-    }
-
-    std::cout << "Server listening on port 5555...\n";
-
-    while (true) {
-        SOCKET ClientSocket = accept(ListenSocket, nullptr, nullptr);
-        if (ClientSocket == INVALID_SOCKET) {
-            std::cerr << "Accept failed\n";
-            break;
-        }
-
-        const char* reply = "Hello";
-        if (send(ClientSocket, reply, (int)strlen(reply), 0) == 5)
-            std::cout << "connection\n";
-        closesocket(ClientSocket);
-    }
-
-    closesocket(ListenSocket);
-    WSACleanup();
-    return 0;
 }

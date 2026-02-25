@@ -1,4 +1,3 @@
-// server.cpp super chopped ai generated code
 #include <iostream>
 #include <string>
 #include <fstream>
