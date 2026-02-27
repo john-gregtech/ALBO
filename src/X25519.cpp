@@ -1,8 +1,6 @@
 #include "cryptowrapper/X25519.h"
 
 namespace prototype_functions {
-
-
     X25519KeyPair x25519_generate_keypair() {
         X25519KeyPair kp{};
 

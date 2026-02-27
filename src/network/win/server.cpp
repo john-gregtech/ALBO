@@ -1,75 +1,88 @@
+// server.cpp - Minimal Winsock TCP server
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <iostream>
-#include <string>
 #include <fstream>
 #include <vector>
-#include <math.h>
 #include <thread>
-#include <mutex>
-#include <memory>
-#include <condition_variable>
-#include <format>   
-#include <cstring>
-#include "network/universal/professionalprovider.h"
+#include <chrono>
 
-class Stopwatch {
-    using Clock = std::chrono::steady_clock;
-    Clock::time_point last_mark;
+#pragma comment(lib, "ws2_32.lib")
 
-public:
-    // Starts or resets the timer
-    void start() {
-        last_mark = Clock::now();
+void handleClient(SOCKET clientSocket) {
+    std::ifstream file("large.rar", std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file.\n";
+        closesocket(clientSocket);
+        return;
     }
 
-    // Returns time since last start() or last lap() in nanoseconds
-    int64_t lap() {
-        auto now = Clock::now();
-        auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - last_mark).count();
-        last_mark = now; // Update the mark for the next lap
-        return diff;
-    }
-};
+    const size_t bufferSize = 512;
+    std::vector<char> buffer(bufferSize);
 
-
-template <typename T>
-static void printVector(const std::vector<T>& data) {
-    int j = -1;
-    for (T i : data) {
-        if (++j % 16 == 0) {
-            std::cout << " ";
+    while (file) {
+        file.read(buffer.data(), bufferSize);
+        std::streamsize bytesRead = file.gcount();
+        if (bytesRead > 0) {
+            int sent = send(clientSocket, buffer.data(), static_cast<int>(bytesRead), 0);
+            if (sent == SOCKET_ERROR) {
+                std::cerr << "Send failed: " << WSAGetLastError() << "\n";
+                break;
+            }
         }
-        if (j % 32 == 0) {
-            std::cout << "\n";
-        }
-        std::cout << std::format("{:02x}", (char)i) << "";
     }
-    std::cout << "\n";
+
+    std::cout << "File sent to client.\n";
+    closesocket(clientSocket);
 }
 
 int main() {
-    Stopwatch sw;
-    Stopwatch total;
-    sw.start();
-    total.start();
-    prototype::network::FileReadStream fs = prototype::network::FileReadStream("large.rar");
-    fs.start_thread();
-    std::vector<char> chunk{};
-    // std::cout << (bool)fs->isDone() << " This is the the isDone()\n";
-    sw.lap();
-    total.lap();
-    while (!fs.isDone()) {
-        fs.getTransferBuffer(chunk);
-        //std::cout << fs.getTransferBuffer(chunk) << "if fail -> ";
-        //std::cout << "CHUNK: " << sw.lap()/1000 << "us\n";
-        //std::cout << "================================================\n";
-        //printVector<char>(chunk);
-        // std::cout << "AAA" << ++i << "\n";
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        std::cerr << "WSAStartup failed\n";
+        return 1;
     }
-    std::cout << "Total Time: " << total.lap()/1000 << "us\n";
 
-    
-    prototype::network::UUID myUUID;
-    std::cout << sizeof(myUUID) << "\n";
+    SOCKET listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listenSocket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed: " << WSAGetLastError() << "\n";
+        WSACleanup();
+        return 1;
+    }
 
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(5555);
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
 
+    if (bind(listenSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Bind failed: " << WSAGetLastError() << "\n";
+        closesocket(listenSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
+        std::cerr << "Listen failed: " << WSAGetLastError() << "\n";
+        closesocket(listenSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    std::cout << "Server listening on port 5555...\n";
+
+    while (true) {
+        SOCKET clientSocket = accept(listenSocket, nullptr, nullptr);
+        if (clientSocket == INVALID_SOCKET) {
+            std::cerr << "Accept failed: " << WSAGetLastError() << "\n";
+            continue;
+        }
+
+        std::cout << "Client connected!\n";
+        std::thread(handleClient, clientSocket).detach();
+    }
+
+    closesocket(listenSocket);
+    WSACleanup();
+    return 0;
 }
