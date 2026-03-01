@@ -35,6 +35,7 @@ namespace prototype::network {
         ).count();   
         //i wont add error checking yet as idk what its gonna be for bounds
     }
+    //THIS HERE IS NOT WINDOWS COMPLIENT we need to impliment secureMemory instead
     MessageData::~MessageData() {
         if (!data.empty()) {
             explicit_bzero(data.data(), data.size());
