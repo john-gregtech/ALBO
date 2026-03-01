@@ -38,6 +38,7 @@ add_executable(ALBO
     src/password.cpp
     src/argon2id.cpp
     src/network/universal/database.cpp
+    
 )
 
 if (WIN32)
@@ -47,6 +48,7 @@ if (WIN32)
         src/X25519.cpp
         src/password.cpp
         src/network/win/client.cpp
+        src/network/win/network_boiler.cpp
     )
 
     add_executable(WINSERVER
@@ -55,6 +57,7 @@ if (WIN32)
         src/X25519.cpp
         src/password.cpp
         src/network/win/server.cpp
+        src/network/win/network_boiler.cpp
     )
 elseif (UNIX)
     add_executable(LINUXCLIENT
