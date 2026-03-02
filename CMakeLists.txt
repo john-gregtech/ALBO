@@ -25,7 +25,7 @@ endif()
 set(OpenSSL_USE_STATIC_LIBS OFF)
 set(OpenSSL_USE_MSVC_STATIC_RT OFF)
 
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto SSL)
 
 find_package(SQLite3 REQUIRED)
 
@@ -37,6 +37,7 @@ add_executable(ALBO
     src/X25519.cpp
     src/network/universal/ed25519.cpp
     src/network/universal/config_manager.cpp
+    src/network/universal/secure_socket.cpp
     src/password.cpp
     src/argon2id.cpp
     src/network/linux/secure_mem.cpp
@@ -52,6 +53,7 @@ if (WIN32)
         src/X25519.cpp
         src/network/universal/ed25519.cpp
         src/network/universal/config_manager.cpp
+        src/network/universal/secure_socket.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/win/secure_mem.cpp
@@ -67,6 +69,10 @@ if (WIN32)
         src/X25519.cpp
         src/network/universal/ed25519.cpp
         src/network/universal/config_manager.cpp
+        src/network/universal/secure_socket.cpp
+        src/network/server/rate_limiter.cpp
+        src/network/server/auth_handler.cpp
+        src/network/server/routing_handler.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/win/secure_mem.cpp
@@ -77,18 +83,21 @@ if (WIN32)
     )
 elseif (UNIX)
     add_executable(LINUXCLIENT
+        src/network/linux/client.cpp
         src/sha256.cpp
         src/aes256.cpp
         src/X25519.cpp
         src/network/universal/ed25519.cpp
         src/network/universal/config_manager.cpp
+        src/network/universal/secure_socket.cpp
+        src/network/client/identity_manager.cpp
+        src/network/client/crypto_service.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/linux/secure_mem.cpp
         src/network/linux/socket_manager.cpp
         src/network/universal/professionalprovider.cpp
         src/network/universal/database.cpp
-        src/network/linux/client.cpp
     )
 
     add_executable(LINUXSERVER
@@ -97,6 +106,10 @@ elseif (UNIX)
         src/X25519.cpp
         src/network/universal/ed25519.cpp
         src/network/universal/config_manager.cpp
+        src/network/universal/secure_socket.cpp
+        src/network/server/rate_limiter.cpp
+        src/network/server/auth_handler.cpp
+        src/network/server/routing_handler.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/linux/secure_mem.cpp
@@ -138,6 +151,7 @@ endif()
 target_link_libraries(ALBO
     PRIVATE
         OpenSSL::Crypto
+        OpenSSL::SSL
         SQLite::SQLite3
         argon2
         
@@ -147,6 +161,7 @@ if (WIN32)
     target_link_libraries(WINCLIENT
         PRIVATE
             OpenSSL::Crypto
+            OpenSSL::SSL
             SQLite::SQLite3
             argon2
             user32
@@ -156,6 +171,7 @@ if (WIN32)
     target_link_libraries(WINSERVER
         PRIVATE
             OpenSSL::Crypto
+            OpenSSL::SSL
             SQLite::SQLite3
             argon2
             user32
@@ -167,12 +183,14 @@ elseif (UNIX)
     target_link_libraries(LINUXCLIENT
         PRIVATE
             OpenSSL::Crypto
+            OpenSSL::SSL
             SQLite::SQLite3
             argon2
     )
     target_link_libraries(LINUXSERVER
         PRIVATE
             OpenSSL::Crypto
+            OpenSSL::SSL
             SQLite::SQLite3
             argon2
     )

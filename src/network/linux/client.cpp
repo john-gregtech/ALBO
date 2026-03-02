@@ -14,42 +14,26 @@
 #include <condition_variable>
 
 #include "config.h"
-#include "network/linux/socket_manager.h"
+#include "network/universal/secure_socket.h"
 #include "network/universal/database.h"
 #include "network/universal/hex_utils.h"
-#include "cryptowrapper/X25519.h"
-#include "cryptowrapper/aes256.h"
-#include "cryptowrapper/sha256.h"
-#include "cryptowrapper/ed25519.h"
-
-using namespace prototype::network;
-using namespace prototype::database;
-using namespace prototype::cryptowrapper;
+#include "network/linux/client/identity_manager.h"
+#include "network/linux/client/crypto_service.h"
 
 class PacketDispatcher {
 public:
-    std::queue<RawPacket> response_queue;
+    std::queue<prototype::network::RawPacket> response_queue;
     std::mutex mtx;
     std::condition_variable cv;
-    void push(RawPacket p) { std::lock_guard<std::mutex> lock(mtx); response_queue.push(p); cv.notify_one(); }
-    std::optional<RawPacket> wait_for_response(int timeout_sec = 5) {
+    void push(prototype::network::RawPacket p) { std::lock_guard<std::mutex> lock(mtx); response_queue.push(p); cv.notify_one(); }
+    std::optional<prototype::network::RawPacket> wait_for_response(int timeout_sec = 5) {
         std::unique_lock<std::mutex> lock(mtx);
         if (cv.wait_for(lock, std::chrono::seconds(timeout_sec), [this] { return !response_queue.empty(); })) {
-            RawPacket p = response_queue.front(); response_queue.pop(); return p;
+            prototype::network::RawPacket p = response_queue.front(); response_queue.pop(); return p;
         }
         return std::nullopt;
     }
 };
-
-void string_to_uuid_parts(const std::string& uuid_str, uint64_t& high, uint64_t& low) {
-    std::string clean = uuid_str;
-    clean.erase(std::remove(clean.begin(), clean.end(), '-'), clean.end());
-    if (clean.length() != 32) return;
-    try {
-        high = std::stoull(clean.substr(0, 16), nullptr, 16);
-        low = std::stoull(clean.substr(16), nullptr, 16);
-    } catch (...) { high = 0; low = 0; }
-}
 
 int main() {
     std::string ip_input;
@@ -57,8 +41,11 @@ int main() {
     std::cin >> ip_input;
     std::string server_ip = (ip_input == "LOCALHOST" || ip_input == "localhost") ? "127.0.0.1" : ip_input;
 
+    prototype::network::init_openssl();
+    SSL_CTX* ssl_ctx = prototype::network::create_client_context();
+
     std::string db_path = std::string(getenv("HOME")) + "/.local/share/albo/local_inbox.db";
-    DatabaseManager local_db(db_path);
+    prototype::database::DatabaseManager local_db(db_path);
     local_db.initialize();
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -68,50 +55,35 @@ int main() {
 
     if (connect(sock, (struct sockaddr*)&s_addr, sizeof(s_addr)) < 0) { perror("connect"); return 1; }
 
-    auto manager = std::make_shared<LinuxSocketManager>(sock);
-    PacketDispatcher dispatcher;
+    auto manager = std::make_shared<prototype::network::SecureSocketManager>(sock, ssl_ctx, false);
+    if (!manager->perform_handshake()) { ALBO_LOG("TLS Handshake Failed."); return 1; }
 
-    std::thread receiver([manager, &dispatcher, &local_db]() {
+    PacketDispatcher dispatcher;
+    prototype::network::IdentityManager identity(&local_db);
+    prototype::network::CryptoService crypto(&local_db);
+    identity.load_or_generate();
+
+    std::thread receiver([manager, &dispatcher, &crypto, &local_db]() {
         while (true) {
             auto in = manager->receive_packet();
             if (!in) break;
 
-            if (in->header.type == PacketType::MESSAGE_DATA) {
-                try {
-                    if (in->payload.size() < 56) continue;
-                    uint64_t key_id; std::memcpy(&key_id, in->payload.data(), 8);
-                    std::array<uint8_t, 32> eph_pub; std::memcpy(eph_pub.data(), in->payload.data() + 8, 32);
-                    std::array<uint8_t, 16> iv; std::memcpy(iv.data(), in->payload.data() + 40, 16);
-                    std::vector<uint8_t> ciphertext(in->payload.begin() + 56, in->payload.end());
-
-                    PreKeyEntry my_local_key;
-                    if (local_db.get_pre_key_by_id(key_id, my_local_key)) {
-                        std::array<uint8_t, 32> my_priv;
-                        std::copy(my_local_key.priv_key.begin(), my_local_key.priv_key.end(), my_priv.begin());
-                        auto secret = compute_shared_secret(my_priv, eph_pub);
-                        auto aes_key = prototype_functions::sha256_hash(std::string(secret.begin(), secret.end()));
-                        auto pt = prototype_functions::aes_decrypt(ciphertext, aes_key, iv);
-                        
-                        // EXTRACT SENDER NAME FROM HEADER
-                        std::string sender(in->header.sender_name);
-                        if (sender.empty()) sender = "Unknown";
-
-                        std::cout << "\n[" << sender << "]: " << std::string(pt.begin(), pt.end()) << "\nALBO> " << std::flush;
-                        local_db.delete_pre_key(key_id);
-                    }
-                } catch (...) {}
+            if (in->header.type == prototype::network::PacketType::MESSAGE_DATA) {
+                std::string decrypted = crypto.decrypt_packet(*in);
+                std::string sender(in->header.sender_name);
+                std::cout << "\n[" << sender << "]: " << decrypted << "\nALBO> " << std::flush;
             } else dispatcher.push(*in);
         }
     });
     receiver.detach();
 
     auto challenge_opt = dispatcher.wait_for_response();
-    if (challenge_opt && challenge_opt->header.type == PacketType::AUTH_CHALLENGE) {
-        auto identity = generate_ed25519_keypair();
-        auto sig = sign_message(challenge_opt->payload, identity.priv);
-        RawPacket resp; resp.header.type = PacketType::AUTH_RESPONSE;
+    if (challenge_opt && challenge_opt->header.type == prototype::network::PacketType::AUTH_CHALLENGE) {
+        auto sig = prototype::cryptowrapper::sign_message(challenge_opt->payload, identity.get_private_key());
+        prototype::network::RawPacket resp; resp.header.type = prototype::network::PacketType::AUTH_RESPONSE;
         resp.payload.resize(32 + 64);
-        std::memcpy(resp.payload.data(), identity.pub.data(), 32);
+        auto pub = identity.get_public_key();
+        std::memcpy(resp.payload.data(), pub.data(), 32);
         std::memcpy(resp.payload.data() + 32, sig.data(), 64);
         resp.header.payload_size = resp.payload.size();
         manager->send_packet(resp);
@@ -119,24 +91,33 @@ int main() {
 
     std::cout << "\n--- ALBO Messenger ---\n[1] Login\n[2] Create Account\nChoice: ";
     int choice; std::cin >> choice;
-    std::string my_user;
+    std::string my_user, my_uuid;
+    
     if (choice == 1) {
         std::string pwd; std::cout << "Username: "; std::cin >> my_user; std::cout << "Password: "; std::cin >> pwd;
-        RawPacket p; p.header.type = PacketType::LOGIN_REQUEST;
-        std::string auth = to_lowercase(my_user) + ":" + pwd;
+        prototype::network::RawPacket p; p.header.type = prototype::network::PacketType::LOGIN_REQUEST;
+        std::string auth = prototype::network::to_lowercase(my_user) + ":" + pwd;
         p.payload.assign(auth.begin(), auth.end()); p.header.payload_size = p.payload.size();
         manager->send_packet(p);
-    } else if (choice == 2) {
+    } else {
         std::string pwd, display; std::cout << "New Username: "; std::cin >> my_user; std::cout << "New Password: "; std::cin >> pwd; std::cout << "Display Name: "; std::cin >> display;
-        RawPacket p; p.header.type = PacketType::REGISTER_REQUEST;
-        std::string data = to_lowercase(my_user) + ":" + pwd + ":" + display;
+        prototype::network::RawPacket p; p.header.type = prototype::network::PacketType::REGISTER_REQUEST;
+        std::string data = prototype::network::to_lowercase(my_user) + ":" + pwd + ":" + display;
         p.payload.assign(data.begin(), data.end()); p.header.payload_size = p.payload.size();
         manager->send_packet(p);
     }
 
     auto auth_res = dispatcher.wait_for_response();
-    if (auth_res && (auth_res->header.type == PacketType::LOGIN_SUCCESS || auth_res->header.type == PacketType::REGISTER_SUCCESS)) {
+    if (auth_res && (auth_res->header.type == prototype::network::PacketType::LOGIN_SUCCESS || auth_res->header.type == prototype::network::PacketType::REGISTER_SUCCESS)) {
         ALBO_LOG("Auth Success!");
+        if (auth_res->header.type == prototype::network::PacketType::REGISTER_SUCCESS) {
+            my_uuid = std::string(auth_res->payload.begin(), auth_res->payload.end());
+            ALBO_LOG("Uploading Pre-Keys...");
+            auto up_p = crypto.generate_prekey_batch(my_uuid);
+            prototype::network::RawPacket upload; upload.header.type = prototype::network::PacketType::PREKEY_UPLOAD;
+            upload.payload = up_p; upload.header.payload_size = up_p.size();
+            manager->send_packet(upload);
+        }
     } else { ALBO_LOG("Auth Failed."); return 0; }
 
     while (true) {
@@ -144,30 +125,27 @@ int main() {
         std::string target; if (!(std::cin >> target)) break;
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         
-        RawPacket fetch; fetch.header.type = PacketType::PREKEY_FETCH;
-        std::string t_low = to_lowercase(target);
+        prototype::network::RawPacket fetch; fetch.header.type = prototype::network::PacketType::PREKEY_FETCH;
+        std::string t_low = prototype::network::to_lowercase(target);
         fetch.payload.assign(t_low.begin(), t_low.end()); fetch.header.payload_size = fetch.payload.size();
         manager->send_packet(fetch);
 
         auto pre_res = dispatcher.wait_for_response();
-        if (pre_res && pre_res->header.type == PacketType::PREKEY_RESPONSE) {
+        if (pre_res && pre_res->header.type == prototype::network::PacketType::PREKEY_RESPONSE) {
             uint64_t key_id; std::memcpy(&key_id, pre_res->payload.data(), 8);
             std::array<uint8_t, 32> t_pub; std::memcpy(t_pub.data(), pre_res->payload.data() + 8, 32);
+            
             std::cout << "ALBO> Message: "; std::string text; std::getline(std::cin, text);
-            auto my_eph = generate_x25519_keypair();
-            auto secret = compute_shared_secret(my_eph.priv, t_pub);
-            auto aes_k = prototype_functions::sha256_hash(std::string(secret.begin(), secret.end()));
-            auto iv = prototype_functions::generate_initialization_vector();
-            auto ct = prototype_functions::aes_encrypt(std::vector<uint8_t>(text.begin(), text.end()), aes_k, iv);
-            RawPacket msg; msg.header.type = PacketType::MESSAGE_DATA;
-            std::string pfx = "@" + t_low + ":"; msg.payload.assign(pfx.begin(), pfx.end());
-            size_t h = msg.payload.size(); msg.payload.resize(h + 8 + 32 + 16 + ct.size());
-            std::memcpy(msg.payload.data() + h, &key_id, 8);
-            std::memcpy(msg.payload.data() + h + 8, my_eph.pub.data(), 32);
-            std::memcpy(msg.payload.data() + h + 40, iv.data(), 16);
-            std::memcpy(msg.payload.data() + h + 56, ct.data(), ct.size());
-            msg.header.payload_size = msg.payload.size(); manager->send_packet(msg);
+            
+            prototype::network::RawPacket msg = crypto.encrypt_message(text, key_id, t_pub);
+            std::string pfx = "@" + t_low + ":";
+            msg.payload.insert(msg.payload.begin(), pfx.begin(), pfx.end());
+            msg.header.payload_size = msg.payload.size();
+            manager->send_packet(msg);
         } else { ALBO_LOG("Recipient offline or invalid."); }
     }
+
+    SSL_CTX_free(ssl_ctx);
+    prototype::network::cleanup_openssl();
     return 0;
 }
