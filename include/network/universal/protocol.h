@@ -25,6 +25,9 @@ namespace prototype::network {
         PREKEY_UPLOAD     = 0x0E,
         PREKEY_FETCH      = 0x0F,
         PREKEY_RESPONSE   = 0x10,
+        GROUP_CREATE      = 0x11, // Client -> Server
+        GROUP_INVITE      = 0x12, // Client -> Server (Add user to group)
+        GROUP_MSG         = 0x13, // Client -> Server -> All Members
         DISCONNECT        = 0xFF
     };
 

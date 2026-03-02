@@ -20,6 +20,8 @@ namespace prototype::network {
         tcgetattr(STDIN_FILENO, &orig_termios);
         struct termios raw = orig_termios;
         raw.c_lflag &= ~(ECHO | ICANON); // Turn off echo and line-buffering
+        raw.c_cc[VMIN] = 0;
+        raw.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
         std::cout << "\033[?1049h"; // Use alternate screen buffer
     }
@@ -38,6 +40,7 @@ namespace prototype::network {
 
     void ConsoleManager::add_message(const std::string& sender, const std::string& text) {
         std::lock_guard<std::mutex> lock(mtx);
+        // If the sender name looks like a group (e.g. "[Group: name]"), it will be displayed here
         message_history.push_back("[" + sender + "]: " + text);
         if (message_history.size() > 500) message_history.erase(message_history.begin());
         redraw();

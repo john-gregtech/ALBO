@@ -68,6 +68,17 @@ namespace prototype::database {
                 last_seen INTEGER,
                 is_contact INTEGER DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS groups (
+                group_uuid TEXT PRIMARY KEY,
+                group_name TEXT NOT NULL,
+                admin_uuid TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS group_members (
+                group_uuid TEXT NOT NULL,
+                user_uuid TEXT NOT NULL,
+                PRIMARY KEY (group_uuid, user_uuid)
+            );
         )";
         return execute_raw(schema);
     }
@@ -221,6 +232,7 @@ namespace prototype::database {
         sqlite3_bind_int64(stmt, 5, user.last_seen);
         sqlite3_bind_int(stmt, 6, user.is_contact ? 1 : 0);
         bool res = (sqlite3_step(stmt) == SQLITE_DONE);
+        if (!res) std::cerr << "[DB Error] upsert_user FAILED: " << sqlite3_errmsg(db) << std::endl;
         sqlite3_finalize(stmt); return res;
     }
 
@@ -282,7 +294,91 @@ namespace prototype::database {
         sqlite3_finalize(stmt); return res;
     }
 
-    bool DatabaseManager::wipe_all_data() { return execute_raw("DELETE FROM users; DELETE FROM messages; DELETE FROM offline_messages; DELETE FROM pre_keys;"); }
+    bool DatabaseManager::create_group(const GroupEntry& group) {
+        std::lock_guard<std::mutex> lock(db_mutex);
+        const char* sql = "INSERT INTO groups (group_uuid, group_name, admin_uuid, created_at) VALUES (?, ?, ?, ?);";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+        sqlite3_bind_text(stmt, 1, group.group_uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, group.group_name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, group.admin_uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 4, group.created_at);
+        bool res = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return res;
+    }
+
+    bool DatabaseManager::add_group_member(const std::string& group_uuid, const std::string& user_uuid) {
+        std::lock_guard<std::mutex> lock(db_mutex);
+        const char* sql = "INSERT OR IGNORE INTO group_members (group_uuid, user_uuid) VALUES (?, ?);";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+        sqlite3_bind_text(stmt, 1, group_uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, user_uuid.c_str(), -1, SQLITE_STATIC);
+        bool res = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return res;
+    }
+
+    bool DatabaseManager::remove_group_member(const std::string& group_uuid, const std::string& user_uuid) {
+        std::lock_guard<std::mutex> lock(db_mutex);
+        const char* sql = "DELETE FROM group_members WHERE group_uuid = ? AND user_uuid = ?;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+        sqlite3_bind_text(stmt, 1, group_uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, user_uuid.c_str(), -1, SQLITE_STATIC);
+        bool res = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return res;
+    }
+
+    std::vector<std::string> DatabaseManager::get_group_members(const std::string& group_uuid) {
+        std::lock_guard<std::mutex> lock(db_mutex);
+        std::vector<std::string> res;
+        const char* sql = "SELECT user_uuid FROM group_members WHERE group_uuid = ?;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return res;
+        sqlite3_bind_text(stmt, 1, group_uuid.c_str(), -1, SQLITE_STATIC);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            res.push_back((const char*)sqlite3_column_text(stmt, 0));
+        }
+        sqlite3_finalize(stmt);
+        return res;
+    }
+
+    std::vector<GroupEntry> DatabaseManager::get_user_groups(const std::string& user_uuid) {
+        std::lock_guard<std::mutex> lock(db_mutex);
+        std::vector<GroupEntry> res;
+        const char* sql = "SELECT g.group_uuid, g.group_name, g.admin_uuid, g.created_at FROM groups g "
+                          "JOIN group_members gm ON g.group_uuid = gm.group_uuid WHERE gm.user_uuid = ?;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return res;
+        sqlite3_bind_text(stmt, 1, user_uuid.c_str(), -1, SQLITE_STATIC);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            GroupEntry g;
+            g.group_uuid = (const char*)sqlite3_column_text(stmt, 0);
+            g.group_name = (const char*)sqlite3_column_text(stmt, 1);
+            g.admin_uuid = (const char*)sqlite3_column_text(stmt, 2);
+            g.created_at = sqlite3_column_int64(stmt, 3);
+            res.push_back(g);
+        }
+        sqlite3_finalize(stmt);
+        return res;
+    }
+
+    bool DatabaseManager::is_group_admin(const std::string& group_uuid, const std::string& user_uuid) {
+        std::lock_guard<std::mutex> lock(db_mutex);
+        const char* sql = "SELECT 1 FROM groups WHERE group_uuid = ? AND admin_uuid = ?;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+        sqlite3_bind_text(stmt, 1, group_uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, user_uuid.c_str(), -1, SQLITE_STATIC);
+        bool res = (sqlite3_step(stmt) == SQLITE_ROW);
+        sqlite3_finalize(stmt);
+        return res;
+    }
+
+    bool DatabaseManager::wipe_all_data() { return execute_raw("DELETE FROM users; DELETE FROM messages; DELETE FROM offline_messages; DELETE FROM pre_keys; DELETE FROM groups; DELETE FROM group_members;"); }
     bool DatabaseManager::clear_messages(const std::string& contact_uuid) { return execute_raw("DELETE FROM messages WHERE sender_uuid = '" + contact_uuid + "' OR target_uuid = '" + contact_uuid + "';"); }
     void DatabaseManager::execute_sql(const std::string& sql_command) {
         std::lock_guard<std::mutex> lock(db_mutex);
