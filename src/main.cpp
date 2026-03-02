@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <chrono>
 #include <sstream>
+#include <filesystem>
 
 #include "network/universal/database.h"
 #include "network/universal/professionalprovider.h"
@@ -19,8 +20,9 @@ int64_t current_time_ms() {
 // Convert bytes to a hex string
 std::string to_hex(const uint8_t* data, size_t len) {
     std::stringstream ss;
+    ss << std::hex << std::setfill('0');
     for (size_t i = 0; i < len; ++i) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << (int)data[i];
+        ss << std::setw(2) << (int)data[i];
     }
     return ss.str();
 }
@@ -54,21 +56,17 @@ std::string uuid_to_string(const prototype::network::UUID& uuid) {
 }
 
 void print_sim_help() {
-    std::cout << "\n--- ALBO Robustness & Versatility Simulation (Argon2id Active) ---\n";
+    std::cout << "\n--- ALBO Robustness & Versatility Simulation ---\n";
     std::cout << "Auth Commands:\n";
-    std::cout << "  login <uuid> <password>        - Log in with Argon2id verification\n";
-    std::cout << "  logout                        - Revert to Guest\n";
+    std::cout << "  login <username> <password>\n";
+    std::cout << "  logout\n";
     std::cout << "\nUser Commands:\n";
-    std::cout << "  adduser <pwd> <name> <status>  - Create a user (hashes pwd with Argon2id)\n";
+    std::cout << "  adduser <user> <pwd> <display> - Create user\n";
     std::cout << "  users                          - List all users\n";
-    std::cout << "  finduser <uuid>                - Search user details (shows salt/hash)\n";
-    std::cout << "\nArgon2id Direct Test:\n";
-    std::cout << "  hash <password>                - Manually hash a password\n";
+    std::cout << "  finduser <username>            - Search user by name\n";
     std::cout << "\nMessage Commands:\n";
     std::cout << "  send <to_uuid> <msg>, chat <uuid2>, history\n";
-    std::cout << "\nMaintenance Commands:\n";
-    std::cout << "  wipe, init, sql <query>, help, exit\n";
-    std::cout << "------------------------------------------------------------------\n";
+    std::cout << "--------------------------------------------------\n";
 }
 
 int main() {
@@ -76,7 +74,11 @@ int main() {
     using namespace prototype::network;
     using namespace prototype::cryptowrapper;
     
-    DatabaseManager db("albo_simulation.db");
+    std::string db_path = "/home/void/.local/share/albo/albo_sim.db";
+    const char* home = getenv("HOME");
+    if (home) db_path = std::string(home) + "/.local/share/albo/albo_sim.db";
+
+    DatabaseManager db(db_path);
     db.initialize();
 
     std::string line;
@@ -84,6 +86,7 @@ int main() {
     std::string current_user_name = "Guest";
 
     std::cout << "ALBO Full-Scale Simulation Environment.\n";
+    std::cout << "Database: " << db_path << "\n";
     print_sim_help();
 
     while (true) {
@@ -97,68 +100,46 @@ int main() {
 
         try {
             if (cmd == "login") {
-                std::string uuid, pwd; ss >> uuid >> pwd;
+                std::string username, pwd; ss >> username >> pwd;
                 UserEntry u;
-                if (db.get_user(uuid, u)) {
-                    // Extract salt and hash from the stored "password" field
-                    // Format in DB: salt_hex:hash_hex
+                if (db.get_user_by_name(username, u)) {
                     size_t colon_pos = u.password.find(':');
                     if (colon_pos != std::string::npos) {
                         auto salt = from_hex(u.password.substr(0, colon_pos));
                         auto hash = from_hex(u.password.substr(colon_pos + 1));
-                        
                         if (verify_password(pwd, hash, salt)) {
-                            current_user_uuid = uuid;
-                            current_user_name = u.display_name;
-                            std::cout << "Successfully logged in as " << current_user_name << " (Argon2id Verified)\n";
-                        } else {
-                            std::cout << "Login failed: Incorrect Password.\n";
-                        }
-                    } else {
-                        std::cout << "Login failed: Stored password format is invalid.\n";
+                            current_user_uuid = u.uuid;
+                            current_user_name = u.username;
+                            std::cout << "Successfully logged in!\n";
+                        } else std::cout << "Login failed: Incorrect Password.\n";
                     }
-                } else {
-                    std::cout << "Login failed: Invalid UUID.\n";
-                }
-            }
-            else if (cmd == "hash") {
-                std::string pwd; ss >> pwd;
-                auto res = hash_password(pwd);
-                std::cout << "Salt: " << to_hex(res.salt) << "\n";
-                std::cout << "Hash: " << to_hex(res.hash) << "\n";
+                } else std::cout << "Login failed: User not found.\n";
             }
             else if (cmd == "adduser") {
                 UserEntry u;
-                std::string pwd; ss >> pwd >> u.display_name;
-                std::getline(ss >> std::ws, u.status_text);
+                std::string pwd; 
+                ss >> u.username >> pwd >> u.display_name;
                 
-                // Hash the password
+                UserEntry dummy;
+                if (db.get_user_by_name(u.username, dummy)) {
+                    std::cout << "Error: Username taken!\n";
+                    continue;
+                }
+
                 auto res = hash_password(pwd);
                 u.password = to_hex(res.salt) + ":" + to_hex(res.hash);
-                
                 u.uuid = uuid_to_string(generate_uuid_v4());
                 u.last_seen = current_time_ms();
                 u.public_key_hex = "0xFEEDFACE"; 
                 u.is_contact = true;
                 
                 if (db.upsert_user(u)) {
-                    std::cout << "User '" << u.display_name << "' created.\n";
-                    std::cout << "UUID: " << u.uuid << "\n";
+                    std::cout << "User '" << u.username << "' created. UUID: " << u.uuid << "\n";
                 }
             }
             else if (cmd == "users") {
                 auto users = db.list_all_users();
-                for (const auto& u : users) std::cout << u.uuid << " | " << u.display_name << "\n";
-            }
-            else if (cmd == "finduser") {
-                std::string uuid; ss >> uuid;
-                UserEntry u;
-                if (db.get_user(uuid, u)) {
-                    std::cout << "UUID:   " << u.uuid << "\n";
-                    std::cout << "Name:   " << u.display_name << "\n";
-                    std::cout << "Status: " << u.status_text << "\n";
-                    std::cout << "Stored Credential (Salt:Hash): " << u.password << "\n";
-                } else std::cout << "Not found.\n";
+                for (const auto& u : users) std::cout << u.username << " | " << u.uuid << "\n";
             }
             else if (cmd == "logout") {
                 current_user_uuid = ""; current_user_name = "Guest";
@@ -166,14 +147,23 @@ int main() {
             }
             else if (cmd == "send") {
                 if (current_user_uuid.empty()) { std::cout << "Log in first!\n"; continue; }
-                std::string to, msg_text;
-                ss >> to; std::getline(ss >> std::ws, msg_text);
+                std::string to_uuid, msg_text;
+                ss >> to_uuid; std::getline(ss >> std::ws, msg_text);
                 MessageEntry m;
-                m.sender_uuid = current_user_uuid; m.target_uuid = to;
+                m.sender_uuid = current_user_uuid; m.target_uuid = to_uuid;
                 m.timestamp = current_time_ms(); m.is_read = false;
                 m.encrypted_payload.assign(msg_text.begin(), msg_text.end());
                 m.iv.fill(0x55);
                 db.store_message(m); std::cout << "Sent.\n";
+            }
+            else if (cmd == "chat") {
+                if (current_user_uuid.empty()) { std::cout << "Log in first!\n"; continue; }
+                std::string u2; ss >> u2;
+                auto msgs = db.get_chat_history(current_user_uuid, u2, 50);
+                for (const auto& m : msgs) {
+                    std::string content(m.encrypted_payload.begin(), m.encrypted_payload.end());
+                    std::cout << "[" << m.timestamp << "] " << (m.sender_uuid == current_user_uuid ? "Me" : "Them") << ": " << content << "\n";
+                }
             }
             else if (cmd == "history") {
                 if (current_user_uuid.empty()) { std::cout << "Log in first!\n"; continue; }
@@ -182,20 +172,6 @@ int main() {
                     std::string content(m.encrypted_payload.begin(), m.encrypted_payload.end());
                     std::cout << "[" << m.timestamp << "] " << (m.sender_uuid == current_user_uuid ? "Me" : "Them") << ": " << content << "\n";
                 }
-            }
-            else if (cmd == "chat") {
-                if (current_user_uuid.empty()) { std::cout << "Log in first!\n"; continue; }
-                std::string u2; ss >> u2;
-                auto msgs = db.get_chat_history(current_user_uuid, u2, 50);
-                std::cout << "--- Conversation with " << u2 << " ---\n";
-                for (const auto& m : msgs) {
-                    std::string content(m.encrypted_payload.begin(), m.encrypted_payload.end());
-                    std::cout << "[" << m.timestamp << "] " << (m.sender_uuid == current_user_uuid ? "Me" : "Them") << ": " << content << "\n";
-                }
-            }
-            else if (cmd == "clear") {
-                std::string uuid; ss >> uuid;
-                if (db.clear_messages(uuid)) std::cout << "Messages for contact " << uuid << " cleared.\n";
             }
             else if (cmd == "wipe") {
                 db.wipe_all_data(); current_user_uuid = ""; current_user_name = "Guest";

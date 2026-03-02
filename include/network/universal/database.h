@@ -1,15 +1,11 @@
-#include <queue>
+#pragma once
 #include <vector>
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <string>
 #include <iostream>
-
 #include <thread>
 #include <mutex>
-#include <atomic>
-
 #include <sqlite3.h>
 
 namespace prototype::database {
@@ -26,12 +22,19 @@ namespace prototype::database {
 
     struct UserEntry {
         std::string uuid;
+        std::string username;
         std::string display_name;
         std::string public_key_hex;
-        std::string password; // Plaintext for simulation as requested
+        std::string password;
         int64_t last_seen;
         bool is_contact;
-        std::string status_text;
+    };
+
+    struct PreKeyEntry {
+        uint64_t key_id;
+        std::string owner_uuid;
+        std::vector<uint8_t> pub_key;
+        std::vector<uint8_t> priv_key;
     };
 
     class DatabaseManager {
@@ -39,32 +42,36 @@ namespace prototype::database {
         sqlite3* db = nullptr;
         std::string db_path;
         std::mutex db_mutex;
-
         bool execute_raw(const std::string& sql);
 
     public:
         explicit DatabaseManager(const std::string& path);
         ~DatabaseManager();
 
-        // Prevent copying
         DatabaseManager(const DatabaseManager&) = delete;
         DatabaseManager& operator=(const DatabaseManager&) = delete;
 
         bool initialize();
         
-        // Messaging specific functions
         bool store_message(const MessageEntry& msg);
         std::vector<MessageEntry> get_messages_by_contact(const std::string& contact_uuid, int limit = 50);
         std::vector<MessageEntry> get_chat_history(const std::string& u1, const std::string& u2, int limit = 50);
         bool clear_messages(const std::string& contact_uuid);
         bool wipe_all_data();
 
-        // User/Contact management
         bool upsert_user(const UserEntry& user);
         bool get_user(const std::string& uuid, UserEntry& out_user);
+        bool get_user_by_name(const std::string& username, UserEntry& out_user);
         std::vector<UserEntry> list_all_users();
+
+        bool store_offline_message(const MessageEntry& msg);
+        std::vector<MessageEntry> fetch_and_delete_offline_messages(const std::string& target_uuid);
+
+        bool store_pre_key(const PreKeyEntry& key, bool is_server_side);
+        bool get_one_pre_key(const std::string& owner_uuid, PreKeyEntry& out_key);
+        bool get_pre_key_by_id(uint64_t key_id, PreKeyEntry& out_key);
+        bool delete_pre_key(uint64_t key_id);
         
-        // Generic execution with binding support (simplified for now)
         void execute_sql(const std::string& sql_command);
     };
 }

@@ -38,6 +38,7 @@ add_executable(ALBO
     src/password.cpp
     src/argon2id.cpp
     src/network/linux/secure_mem.cpp
+    src/network/linux/socket_manager.cpp
     src/network/universal/database.cpp
     src/network/universal/professionalprovider.cpp
 )
@@ -76,6 +77,7 @@ elseif (UNIX)
         src/password.cpp
         src/argon2id.cpp
         src/network/linux/secure_mem.cpp
+        src/network/linux/socket_manager.cpp
         src/network/universal/professionalprovider.cpp
         src/network/universal/database.cpp
         src/network/linux/client.cpp
@@ -88,6 +90,7 @@ elseif (UNIX)
         src/password.cpp
         src/argon2id.cpp
         src/network/linux/secure_mem.cpp
+        src/network/linux/socket_manager.cpp
         src/network/universal/professionalprovider.cpp
         src/network/universal/database.cpp
         src/network/linux/server.cpp

@@ -2,22 +2,25 @@
 
 #include <array>
 #include <vector>
-#include <string>
-#include <iostream>
-#include <openssl/kdf.h>
-#include <openssl/evp.h>
+#include <cstdint>
+#include <memory>
 
-namespace prototype_functions {
+namespace prototype::cryptowrapper {
     struct X25519KeyPair {
         std::array<uint8_t, 32> priv{};
         std::array<uint8_t, 32> pub{};
     };
 
-    X25519KeyPair x25519_generate_keypair();
+    /**
+     * @brief Generates a fresh ephemeral X25519 keypair for an echemeral handshake.
+     */
+    X25519KeyPair generate_x25519_keypair();
     
-    std::array<uint8_t, 32> x25519_shared_secret(
+    /**
+     * @brief Computes the shared secret (32 bytes) between a local private key and a remote public key.
+     */
+    std::array<uint8_t, 32> compute_shared_secret(
         const std::array<uint8_t, 32>& my_priv,
         const std::array<uint8_t, 32>& peer_pub
     );
-    
 }
