@@ -93,6 +93,7 @@ elseif (UNIX)
         src/network/client/identity_manager.cpp
         src/network/client/crypto_service.cpp
         src/network/client/console_manager.cpp
+        src/network/client/file_transfer_manager.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/linux/secure_mem.cpp

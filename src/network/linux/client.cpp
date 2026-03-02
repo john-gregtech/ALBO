@@ -10,8 +10,6 @@
 #include <limits>
 #include <filesystem>
 #include <thread>
-#include <queue>
-#include <condition_variable>
 
 #include "config.h"
 #include "network/universal/secure_socket.h"
@@ -20,46 +18,12 @@
 #include "network/linux/client/identity_manager.h"
 #include "network/linux/client/crypto_service.h"
 #include "network/linux/client/console_manager.h"
+#include "network/linux/client/file_transfer_manager.h"
+#include "network/linux/client/packet_dispatcher.h"
 
 using namespace prototype::network;
 using namespace prototype::database;
 using namespace prototype::cryptowrapper;
-
-class PacketDispatcher {
-public:
-    std::queue<RawPacket> response_queue;
-    std::mutex mtx;
-    std::condition_variable cv;
-    // Separate queue for chat messages to be consumed by main loop
-    std::queue<std::string> chat_messages; 
-
-    void push(RawPacket p) { 
-        std::lock_guard<std::mutex> lock(mtx); 
-        response_queue.push(p); 
-        cv.notify_one(); 
-    }
-    
-    void push_chat(const std::string& msg) {
-        std::lock_guard<std::mutex> lock(mtx);
-        chat_messages.push(msg);
-    }
-
-    std::optional<RawPacket> wait_for_response(int timeout_sec = 5) {
-        std::unique_lock<std::mutex> lock(mtx);
-        if (cv.wait_for(lock, std::chrono::seconds(timeout_sec), [this] { return !response_queue.empty(); })) {
-            RawPacket p = response_queue.front(); response_queue.pop(); return p;
-        }
-        return std::nullopt;
-    }
-    
-    bool pop_chat(std::string& out_msg) {
-        std::lock_guard<std::mutex> lock(mtx);
-        if (chat_messages.empty()) return false;
-        out_msg = chat_messages.front();
-        chat_messages.pop();
-        return true;
-    }
-};
 
 void string_to_uuid_parts_client(const std::string& uuid_str, uint64_t& high, uint64_t& low) {
     std::string clean = uuid_str;
@@ -92,22 +56,34 @@ int main() {
 
     PacketDispatcher dispatcher;
     IdentityManager identity(&local_db);
-    CryptoService crypto(&local_db);
+    auto crypto = std::make_shared<CryptoService>(&local_db);
+    FileTransferManager files;
     identity.load_or_generate();
 
-    std::thread receiver([manager, &dispatcher, &crypto]() {
+    std::thread receiver([manager, &dispatcher, crypto, &files]() {
         while (true) {
             auto in = manager->receive_packet();
             if (!in) break;
             if (in->header.type == PacketType::MESSAGE_DATA || in->header.type == PacketType::GROUP_MSG) {
-                std::string decrypted = crypto.decrypt_packet(*in);
+                std::string decrypted = crypto->decrypt_packet(*in);
                 std::string sender(in->header.sender_name);
-                std::string display = "[" + sender + "]: " + decrypted;
-                if (in->header.type == PacketType::GROUP_MSG) display = "[GROUP:" + sender + "]: " + decrypted;
-                dispatcher.push_chat(display);
-            } else {
-                dispatcher.push(*in);
+                if (in->header.type == PacketType::GROUP_MSG) sender = "GROUP:" + sender;
+                dispatcher.push_chat(sender, decrypted);
+            } 
+            else if (in->header.type == PacketType::FILE_HEADER) {
+                std::string raw_dec = crypto->decrypt_packet(*in);
+                RawPacket decrypted_header = *in;
+                decrypted_header.payload.assign(raw_dec.begin(), raw_dec.end());
+                files.handle_header(decrypted_header, in->header.sender_name);
+                dispatcher.push_chat("SYSTEM", "Downloading file from " + std::string(in->header.sender_name));
             }
+            else if (in->header.type == PacketType::FILE_CHUNK) {
+                std::string raw_dec = crypto->decrypt_packet(*in);
+                RawPacket decrypted_chunk = *in;
+                decrypted_chunk.payload.assign(raw_dec.begin(), raw_dec.end());
+                files.handle_chunk(decrypted_chunk, in->header.sender_name);
+            }
+            else dispatcher.push(*in);
         }
     });
     receiver.detach();
@@ -142,13 +118,14 @@ int main() {
     }
 
     auto auth_res = dispatcher.wait_for_response();
-    if (auth_res && (auth_res->header.type == PacketType::LOGIN_SUCCESS || auth_res->header.type == PacketType::REGISTER_SUCCESS)) {
-        my_uuid = std::string(auth_res->payload.begin(), auth_res->payload.end());
-        auto up_p = crypto.generate_prekey_batch(my_uuid);
-        RawPacket upload; upload.header.type = PacketType::PREKEY_UPLOAD;
-        upload.payload = up_p; upload.header.payload_size = up_p.size();
-        manager->send_packet(upload);
-    } else { std::cout << "Auth Failed.\n"; return 0; }
+    if (!auth_res || (auth_res->header.type != PacketType::LOGIN_SUCCESS && auth_res->header.type != PacketType::REGISTER_SUCCESS)) {
+        std::cout << "Auth Failed.\n"; return 0;
+    }
+    my_uuid = std::string(auth_res->payload.begin(), auth_res->payload.end());
+    auto up_p = crypto->generate_prekey_batch(my_uuid);
+    RawPacket upload; upload.header.type = PacketType::PREKEY_UPLOAD;
+    upload.payload = up_p; upload.header.payload_size = up_p.size();
+    manager->send_packet(upload);
 
     prototype::network::ConsoleManager console;
     console.add_message("SYSTEM", "Welcome, " + my_user);
@@ -158,46 +135,24 @@ int main() {
     bool is_last_group = false;
 
     while (true) {
-        // 1. Poll for incoming chat messages (Non-blocking)
-        std::string incoming;
-        while(dispatcher.pop_chat(incoming)) {
-            // Parse sender/text manually if needed, or just display raw string
-            // Assuming dispatcher sends formatted string "[sender]: text"
-            // We need to split it if we want strict add_message(sender, text)
-            // For now, simpler:
-            size_t colon = incoming.find("]: ");
-            if (colon != std::string::npos) {
-                std::string sender = incoming.substr(1, colon - 1); // remove [
-                std::string text = incoming.substr(colon + 3);
-                console.add_message(sender, text);
-            } else {
-                console.add_message("SYSTEM", incoming);
-            }
-        }
+        std::string sdr, msg_txt;
+        while(dispatcher.pop_chat(sdr, msg_txt)) console.add_message(sdr, msg_txt);
 
-        // 2. Process Input (Non-blocking due to VMIN=0)
         std::string input;
         InputResult res = console.process_input(input);
 
         if (res == InputResult::TEXT) {
             if (last_target_name.empty()) {
-                console.add_message("SYSTEM", "No active recipient. Use /msg <user> or /group msg <uuid>");
-            } else if (is_last_group) {
-                RawPacket g; g.header.type = PacketType::GROUP_MSG;
-                string_to_uuid_parts_client(last_target_uuid, g.header.target_high, g.header.target_low);
-                g.payload.assign(input.begin(), input.end()); g.header.payload_size = g.payload.size();
-                manager->send_packet(g);
-                console.add_message("YOU -> GROUP:" + last_target_name, input);
-            } else {
+                console.add_message("SYSTEM", "No active recipient.");
+            } else if (!is_last_group) {
                 RawPacket fetch; fetch.header.type = PacketType::PREKEY_FETCH;
-                fetch.payload.assign(last_target_name.begin(), last_target_name.end());
-                fetch.header.payload_size = fetch.payload.size();
+                fetch.payload.assign(last_target_name.begin(), last_target_name.end()); fetch.header.payload_size = fetch.payload.size();
                 manager->send_packet(fetch);
                 auto pre_res = dispatcher.wait_for_response(1);
                 if (pre_res && pre_res->header.type == PacketType::PREKEY_RESPONSE) {
                     uint64_t key_id; std::memcpy(&key_id, pre_res->payload.data(), 8);
                     std::array<uint8_t, 32> t_pub; std::memcpy(t_pub.data(), pre_res->payload.data() + 8, 32);
-                    RawPacket msg = crypto.encrypt_message(input, key_id, t_pub);
+                    RawPacket msg = crypto->encrypt_message(input, key_id, t_pub);
                     std::string pfx = "@" + last_target_name + ":";
                     msg.payload.insert(msg.payload.begin(), pfx.begin(), pfx.end());
                     msg.header.payload_size = msg.payload.size();
@@ -211,18 +166,15 @@ int main() {
             std::string cmd; ss >> cmd;
             if (cmd == "/msg") {
                 std::string target, text; ss >> target; std::getline(ss >> std::ws, text);
-                last_target_name = to_lowercase(target);
-                is_last_group = false;
-                
+                last_target_name = to_lowercase(target); is_last_group = false;
                 RawPacket fetch; fetch.header.type = PacketType::PREKEY_FETCH;
-                fetch.payload.assign(last_target_name.begin(), last_target_name.end());
-                fetch.header.payload_size = fetch.payload.size();
+                fetch.payload.assign(last_target_name.begin(), last_target_name.end()); fetch.header.payload_size = fetch.payload.size();
                 manager->send_packet(fetch);
                 auto pre_res = dispatcher.wait_for_response(2);
                 if (pre_res && pre_res->header.type == PacketType::PREKEY_RESPONSE) {
                     uint64_t key_id; std::memcpy(&key_id, pre_res->payload.data(), 8);
                     std::array<uint8_t, 32> t_pub; std::memcpy(t_pub.data(), pre_res->payload.data() + 8, 32);
-                    RawPacket msg = crypto.encrypt_message(text, key_id, t_pub);
+                    RawPacket msg = crypto->encrypt_message(text, key_id, t_pub);
                     std::string pfx = "@" + last_target_name + ":";
                     msg.payload.insert(msg.payload.begin(), pfx.begin(), pfx.end());
                     msg.header.payload_size = msg.payload.size();
@@ -234,21 +186,42 @@ int main() {
                 std::string sub; ss >> sub;
                 if (sub == "msg") {
                     std::string g_uuid, text; ss >> g_uuid; std::getline(ss >> std::ws, text);
-                    last_target_name = "Group"; last_target_uuid = g_uuid; is_last_group = true;
+                    last_target_uuid = g_uuid; is_last_group = true;
                     RawPacket g; g.header.type = PacketType::GROUP_MSG;
                     string_to_uuid_parts_client(g_uuid, g.header.target_high, g.header.target_low);
                     g.payload.assign(text.begin(), text.end()); g.header.payload_size = g.payload.size();
                     manager->send_packet(g);
-                    console.add_message("YOU -> GROUP", text);
+                    console.add_message("YOU -> GROUP:" + g_uuid, text);
                 }
+                else if (sub == "create") {
+                    std::string g_name; std::getline(ss >> std::ws, g_name);
+                    RawPacket g; g.header.type = PacketType::GROUP_CREATE;
+                    g.payload.assign(g_name.begin(), g_name.end()); g.header.payload_size = g.payload.size();
+                    manager->send_packet(g);
+                }
+                else if (sub == "invite") {
+                    std::string user, g_uuid; ss >> user >> g_uuid;
+                    RawPacket g; g.header.type = PacketType::GROUP_INVITE;
+                    std::string pld = user + ":" + g_uuid;
+                    g.payload.assign(pld.begin(), pld.end()); g.header.payload_size = pld.size();
+                    manager->send_packet(g);
+                }
+            }
+            else if (cmd == "/msgfile") {
+                std::string target, path; ss >> target >> path;
+                files.send_file_async(path, target, manager, crypto, &dispatcher);
+                last_target_name = to_lowercase(target); is_last_group = false;
+            }
+            else if (cmd == "/ls") {
+                for (const auto& entry : std::filesystem::directory_iterator(".")) 
+                    console.add_message("FILE", entry.path().filename().string());
+            }
+            else if (cmd == "/help") {
+                console.add_message("HELP", "/msg <user> <text>, /msgfile <user> <path>, /group <create|invite|msg>, /ls, /quit");
             }
             else if (cmd == "/quit" || cmd == "/exit") break;
         }
-        
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // CPU saver
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-
-    SSL_CTX_free(ssl_ctx);
-    cleanup_openssl();
-    return 0;
+    SSL_CTX_free(ssl_ctx); cleanup_openssl(); return 0;
 }

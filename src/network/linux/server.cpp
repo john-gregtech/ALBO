@@ -165,43 +165,59 @@ namespace prototype::network {
                     manager->send_packet(f);
                 }
             }
-            else if (packet.header.type == prototype::network::PacketType::MESSAGE_DATA) {
-                if (!my_uuid.empty()) {
-                    std::string target_uuid = "";
-                    std::string payload_str(packet.payload.begin(), packet.payload.end());
-                    if (!payload_str.empty() && payload_str[0] == '@') {
-                        size_t colon = payload_str.find(':');
-                        if (colon != std::string::npos) {
-                            std::string target_name = prototype::network::to_lowercase(payload_str.substr(1, colon - 1));
-                            prototype::database::UserEntry target_user;
-                            if (db->get_user_by_name(target_name, target_user)) {
-                                target_uuid = target_user.uuid;
-                                string_to_uuid_parts(target_uuid, packet.header.target_high, packet.header.target_low);
-                                std::string actual_data = payload_str.substr(colon + 1);
-                                packet.payload.assign(actual_data.begin(), actual_data.end());
-                                packet.header.payload_size = packet.payload.size();
-                            } else {
-                                prototype::network::RawPacket f; f.header.type = prototype::network::PacketType::RESOLVE_FAIL;
-                                manager->send_packet(f); continue;
-                            }
+            // --- GENERIC ROUTING LOOP ---
+            else if (packet.header.type == prototype::network::PacketType::MESSAGE_DATA ||
+                     packet.header.type == prototype::network::PacketType::FILE_HEADER ||
+                     packet.header.type == prototype::network::PacketType::FILE_CHUNK  ||
+                     packet.header.type == prototype::network::PacketType::FILE_FOOTER) {
+                if (my_uuid.empty()) continue;
+                
+                std::string target_uuid = "";
+                std::string payload_str(packet.payload.begin(), packet.payload.end());
+                if (!payload_str.empty() && payload_str[0] == '@') {
+                    size_t colon = payload_str.find(':');
+                    if (colon != std::string::npos) {
+                        std::string target_name = prototype::network::to_lowercase(payload_str.substr(1, colon - 1));
+                        prototype::database::UserEntry target_user;
+                        if (db->get_user_by_name(target_name, target_user)) {
+                            target_uuid = target_user.uuid;
+                            string_to_uuid_parts(target_uuid, packet.header.target_high, packet.header.target_low);
+                            std::string actual_data = payload_str.substr(colon + 1);
+                            packet.payload.assign(actual_data.begin(), actual_data.end());
+                            packet.header.payload_size = packet.payload.size();
+                        } else {
+                            prototype::network::RawPacket f; f.header.type = prototype::network::PacketType::RESOLVE_FAIL;
+                            manager->send_packet(f); continue;
                         }
                     }
-                    if (target_uuid.empty()) {
-                        std::stringstream ss_u; ss_uuid_format(ss_u, packet.header.target_high, packet.header.target_low);
-                        target_uuid = ss_u.str();
-                    }
-                    std::memset(packet.header.sender_name, 0, 16);
-                    std::strncpy(packet.header.sender_name, my_username.c_str(), 15);
-                    string_to_uuid_parts(my_uuid, packet.header.target_high, packet.header.target_low);
-                    auto target_manager = global_registry.get_session(target_uuid);
-                    if (target_manager) target_manager->send_packet(packet);
-                    else {
-                        prototype::database::MessageEntry m;
-                        m.sender_uuid = my_uuid; m.target_uuid = target_uuid;
-                        m.encrypted_payload = packet.payload; m.timestamp = current_time_ms();
-                        db->store_offline_message(m);
-                    }
                 }
+
+                if (target_uuid.empty()) {
+                    std::stringstream ss_u; ss_uuid_format(ss_u, packet.header.target_high, packet.header.target_low);
+                    target_uuid = ss_u.str();
+                }
+
+                std::memset(packet.header.sender_name, 0, 16);
+                std::strncpy(packet.header.sender_name, my_username.c_str(), 15);
+                string_to_uuid_parts(my_uuid, packet.header.target_high, packet.header.target_low);
+
+                auto target_manager = global_registry.get_session(target_uuid);
+                if (target_manager) {
+                    ALBO_LOG("[ROUTE] " << my_username << " -> " << global_registry.get_name(target_uuid));
+                    target_manager->send_packet(packet);
+                } else {
+                    ALBO_LOG("[OFFLINE] " << my_username << " -> " << target_uuid);
+                    prototype::database::MessageEntry m;
+                    m.sender_uuid = my_uuid; m.target_uuid = target_uuid;
+                    m.encrypted_payload = packet.payload;
+                    m.timestamp = current_time_ms();
+                    db->store_offline_message(m);
+                }
+            }
+            else if (packet.header.type == prototype::network::PacketType::GROUP_MSG) {
+                if (my_uuid.empty()) continue;
+                std::stringstream ss_g; ss_uuid_format(ss_g, packet.header.target_high, packet.header.target_low);
+                route_service.broadcast_to_group(packet, ss_g.str(), my_uuid, my_username);
             }
         }
         if (!my_uuid.empty()) global_registry.remove_session(my_uuid);

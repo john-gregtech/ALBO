@@ -17,17 +17,19 @@ namespace prototype::network {
         REGISTER_SUCCESS  = 0x06,
         REGISTER_FAIL     = 0x07,
         MESSAGE_DATA      = 0x08, 
-        FILE_CHUNK        = 0x09,
-        PING              = 0x0A,
-        ROUTE_FAIL        = 0x0B,
-        RESOLVE_FAIL      = 0x0C,
-        INBOX_FETCH       = 0x0D,
-        PREKEY_UPLOAD     = 0x0E,
-        PREKEY_FETCH      = 0x0F,
-        PREKEY_RESPONSE   = 0x10,
-        GROUP_CREATE      = 0x11, // Client -> Server
-        GROUP_INVITE      = 0x12, // Client -> Server (Add user to group)
-        GROUP_MSG         = 0x13, // Client -> Server -> All Members
+        FILE_HEADER       = 0x09, // Size, Total Checksum, Chunk Count, Filename
+        FILE_CHUNK        = 0x0A, // Chunk Index, Chunk Checksum, Data
+        FILE_FOOTER       = 0x0B, // End of transfer
+        PING              = 0x0C,
+        ROUTE_FAIL        = 0x0D,
+        RESOLVE_FAIL      = 0x0E,
+        INBOX_FETCH       = 0x0F,
+        PREKEY_UPLOAD     = 0x10,
+        PREKEY_FETCH      = 0x11,
+        PREKEY_RESPONSE   = 0x12,
+        GROUP_CREATE      = 0x13,
+        GROUP_INVITE      = 0x14,
+        GROUP_MSG         = 0x15,
         DISCONNECT        = 0xFF
     };
 
@@ -43,5 +45,5 @@ namespace prototype::network {
     };
     #pragma pack(pop)
 
-    constexpr size_t HEADER_SIZE = sizeof(PacketHeader); // 26 Bytes
+    constexpr size_t HEADER_SIZE = sizeof(PacketHeader); // 42 Bytes now
 }
