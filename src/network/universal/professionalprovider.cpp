@@ -1,4 +1,5 @@
 #include "network/universal/professionalprovider.h"
+#include "cryptowrapper/secure_mem.h"
 
 namespace prototype::network {
     UUID generate_uuid_v4() {
@@ -29,16 +30,16 @@ namespace prototype::network {
         {
         std::string temp(data.begin(), data.end());
         checksum = prototype_functions::sha256_hash(temp);
-        explicit_bzero(temp.data(), temp.size());
+        prototype::cryptowrapper::secure_erase(temp.data(), temp.size());
         time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()
         ).count();   
         //i wont add error checking yet as idk what its gonna be for bounds
     }
-    //THIS HERE IS NOT WINDOWS COMPLIENT we need to impliment secureMemory instead
+    //THIS HERE IS NOW WINDOWS COMPLIANT via secure_erase abstraction
     MessageData::~MessageData() {
         if (!data.empty()) {
-            explicit_bzero(data.data(), data.size());
+            prototype::cryptowrapper::secure_erase(data.data(), data.size());
         }
     }
     void MessageData::setAsSent() {

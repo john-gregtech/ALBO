@@ -1,14 +1,12 @@
-#include "cryptowrapper/argon2id.h"
+#include "cryptowrapper/argon3id.h"
 
 std::vector<uint8_t> argonidhash(const std::vector<uint8_t>& input) {
-    // ---- Parameters (safe defaults for testing) ----
     constexpr uint32_t t_cost = 2;          // iterations
     constexpr uint32_t m_cost = 1 << 16;    // 64 MB
     constexpr uint32_t parallelism = 1;     // threads
     constexpr size_t hash_len = 32;         // 256-bit output
     constexpr size_t salt_len = 16;
 
-    // ---- Generate cryptographically secure salt ----
     std::vector<uint8_t> salt(salt_len);
 
     if (RAND_bytes(salt.data(), static_cast<int>(salt.size())) != 1) {

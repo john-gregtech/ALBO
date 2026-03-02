@@ -4,10 +4,20 @@
 #include <openssl/rand.h>
 #include <vector>
 #include <array>
+#include <memory>
 
 #include <iostream>
+#include "cryptowrapper/secure_mem.h"
 
 namespace prototype_functions {
+    // Custom deleter for OpenSSL EVP_CIPHER_CTX
+    struct EvpCtxDeleter {
+        void operator()(EVP_CIPHER_CTX* ctx) const {
+            EVP_CIPHER_CTX_free(ctx);
+        }
+    };
+    using EvpCtxPtr = std::unique_ptr<EVP_CIPHER_CTX, EvpCtxDeleter>;
+
     struct AesEncrypted {
         std::array<uint8_t, 16> iv;
         std::vector<uint8_t> ciphertext;

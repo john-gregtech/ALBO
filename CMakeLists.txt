@@ -36,7 +36,7 @@ add_executable(ALBO
     src/aes256.cpp
     src/X25519.cpp
     src/password.cpp
-    src/argon2id.cpp
+    src/network/linux/secure_mem.cpp
     src/network/universal/database.cpp
     
 )
@@ -47,6 +47,8 @@ if (WIN32)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/network/win/secure_mem.cpp
+        src/network/universal/professionalprovider.cpp
         src/network/win/client.cpp
         src/network/win/network_boiler.cpp
     )
@@ -56,6 +58,8 @@ if (WIN32)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/network/win/secure_mem.cpp
+        src/network/universal/professionalprovider.cpp
         src/network/win/server.cpp
         src/network/win/network_boiler.cpp
     )
@@ -65,6 +69,7 @@ elseif (UNIX)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/network/linux/secure_mem.cpp
         src/network/universal/professionalprovider.cpp
         src/network/linux/client.cpp
     )
@@ -74,6 +79,7 @@ elseif (UNIX)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/network/linux/secure_mem.cpp
         src/network/universal/professionalprovider.cpp
         src/network/linux/server.cpp
     )
