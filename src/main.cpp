@@ -1,17 +1,24 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <sstream>
 #include <iomanip>
-#include <algorithm>
+#include <chrono>
+#include <sstream>
 
-#include "cryptowrapper/aes256.h"
-#include "cryptowrapper/sha256.h"
+#include "network/universal/database.h"
+#include "network/universal/professionalprovider.h"
+#include "cryptowrapper/argon2id.h"
 
-// Helper to convert bytes to a hex string (e.g., 0xABC123)
+// Simple helper to get current time in MS
+int64_t current_time_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+}
+
+// Convert bytes to a hex string
 std::string to_hex(const uint8_t* data, size_t len) {
     std::stringstream ss;
-    ss << "0x";
     for (size_t i = 0; i < len; ++i) {
         ss << std::hex << std::setw(2) << std::setfill('0') << (int)data[i];
     }
@@ -22,12 +29,9 @@ std::string to_hex(const std::vector<uint8_t>& data) {
     return to_hex(data.data(), data.size());
 }
 
-// Helper to convert hex string (with or without 0x) back to bytes
+// Helper to convert hex string back to bytes
 std::vector<uint8_t> from_hex(std::string hex) {
-    if (hex.size() >= 2 && hex.substr(0, 2) == "0x") {
-        hex = hex.substr(2);
-    }
-    
+    if (hex.size() >= 2 && hex.substr(0, 2) == "0x") hex = hex.substr(2);
     std::vector<uint8_t> bytes;
     for (size_t i = 0; i < hex.length(); i += 2) {
         std::string byteString = hex.substr(i, 2);
@@ -37,28 +41,53 @@ std::vector<uint8_t> from_hex(std::string hex) {
     return bytes;
 }
 
-void print_help() {
-    std::cout << "\n--- AES-256-GCM Test Utility ---\n";
-    std::cout << "Commands:\n";
-    std::cout << "  keygen          - Generate a random 32-byte key and 16-byte IV\n";
-    std::cout << "  encrypt <text>  - Encrypt text (requires prior keygen or manual set)\n";
-    std::cout << "  decrypt <hex>   - Decrypt hex ciphertext (requires prior keygen/set)\n";
-    std::cout << "  setkey <hex>    - Manually set the 32-byte hex key\n";
-    std::cout << "  setiv <hex>     - Manually set the 16-byte hex IV\n";
-    std::cout << "  exit            - Close the program\n";
-    std::cout << "--------------------------------\n";
+// Convert our UUID struct into a standard string format (8-4-4-4-12)
+std::string uuid_to_string(const prototype::network::UUID& uuid) {
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0');
+    ss << std::setw(8) << (uint32_t)(uuid.high >> 32) << "-";
+    ss << std::setw(4) << (uint16_t)(uuid.high >> 16) << "-";
+    ss << std::setw(4) << (uint16_t)uuid.high << "-";
+    ss << std::setw(4) << (uint16_t)(uuid.low >> 48) << "-";
+    ss << std::setw(12) << (uuid.low & 0xFFFFFFFFFFFFULL);
+    return ss.str();
+}
+
+void print_sim_help() {
+    std::cout << "\n--- ALBO Robustness & Versatility Simulation (Argon2id Active) ---\n";
+    std::cout << "Auth Commands:\n";
+    std::cout << "  login <uuid> <password>        - Log in with Argon2id verification\n";
+    std::cout << "  logout                        - Revert to Guest\n";
+    std::cout << "\nUser Commands:\n";
+    std::cout << "  adduser <pwd> <name> <status>  - Create a user (hashes pwd with Argon2id)\n";
+    std::cout << "  users                          - List all users\n";
+    std::cout << "  finduser <uuid>                - Search user details (shows salt/hash)\n";
+    std::cout << "\nArgon2id Direct Test:\n";
+    std::cout << "  hash <password>                - Manually hash a password\n";
+    std::cout << "\nMessage Commands:\n";
+    std::cout << "  send <to_uuid> <msg>, chat <uuid2>, history\n";
+    std::cout << "\nMaintenance Commands:\n";
+    std::cout << "  wipe, init, sql <query>, help, exit\n";
+    std::cout << "------------------------------------------------------------------\n";
 }
 
 int main() {
-    std::string line;
-    std::array<uint8_t, 32> current_key = {0};
-    std::array<uint8_t, 16> current_iv = {0};
-    bool key_ready = false;
+    using namespace prototype::database;
+    using namespace prototype::network;
+    using namespace prototype::cryptowrapper;
+    
+    DatabaseManager db("albo_simulation.db");
+    db.initialize();
 
-    print_help();
+    std::string line;
+    std::string current_user_uuid = "";
+    std::string current_user_name = "Guest";
+
+    std::cout << "ALBO Full-Scale Simulation Environment.\n";
+    print_sim_help();
 
     while (true) {
-        std::cout << "\nALBO-TEST> ";
+        std::cout << "\n[" << current_user_name << " @ SIM]> ";
         if (!std::getline(std::cin, line) || line == "exit") break;
         if (line.empty()) continue;
 
@@ -67,70 +96,99 @@ int main() {
         ss >> cmd;
 
         try {
-            if (cmd == "keygen") {
-                current_key = prototype_functions::generate_key();
-                current_iv = prototype_functions::generate_initialization_vector();
-                std::cout << "Generated Key: " << to_hex(current_key.data(), 32) << "\n";
-                std::cout << "Generated IV:  " << to_hex(current_iv.data(), 16) << "\n";
-                key_ready = true;
-            } 
-            else if (cmd == "setkey") {
-                std::string hex; ss >> hex;
-                auto bytes = from_hex(hex);
-                if (bytes.size() != 32) {
-                    std::cout << "Error: Key must be 32 bytes (64 hex chars)\n";
+            if (cmd == "login") {
+                std::string uuid, pwd; ss >> uuid >> pwd;
+                UserEntry u;
+                if (db.get_user(uuid, u)) {
+                    // Extract salt and hash from the stored "password" field
+                    // Format in DB: salt_hex:hash_hex
+                    size_t colon_pos = u.password.find(':');
+                    if (colon_pos != std::string::npos) {
+                        auto salt = from_hex(u.password.substr(0, colon_pos));
+                        auto hash = from_hex(u.password.substr(colon_pos + 1));
+                        
+                        if (verify_password(pwd, hash, salt)) {
+                            current_user_uuid = uuid;
+                            current_user_name = u.display_name;
+                            std::cout << "Successfully logged in as " << current_user_name << " (Argon2id Verified)\n";
+                        } else {
+                            std::cout << "Login failed: Incorrect Password.\n";
+                        }
+                    } else {
+                        std::cout << "Login failed: Stored password format is invalid.\n";
+                    }
                 } else {
-                    std::copy(bytes.begin(), bytes.end(), current_key.begin());
-                    std::cout << "Key updated.\n";
-                    key_ready = true;
+                    std::cout << "Login failed: Invalid UUID.\n";
                 }
             }
-            else if (cmd == "setiv") {
-                std::string hex; ss >> hex;
-                auto bytes = from_hex(hex);
-                if (bytes.size() != 16) {
-                    std::cout << "Error: IV must be 16 bytes (32 hex chars)\n";
-                } else {
-                    std::copy(bytes.begin(), bytes.end(), current_iv.begin());
-                    std::cout << "IV updated.\n";
-                }
+            else if (cmd == "hash") {
+                std::string pwd; ss >> pwd;
+                auto res = hash_password(pwd);
+                std::cout << "Salt: " << to_hex(res.salt) << "\n";
+                std::cout << "Hash: " << to_hex(res.hash) << "\n";
             }
-            else if (cmd == "encrypt") {
-                if (!key_ready) {
-                    std::cout << "Error: Generate or set a key first.\n";
-                    continue;
-                }
-                std::string text;
-                std::getline(ss >> std::ws, text); // Read the rest of the line
+            else if (cmd == "adduser") {
+                UserEntry u;
+                std::string pwd; ss >> pwd >> u.display_name;
+                std::getline(ss >> std::ws, u.status_text);
                 
-                std::vector<uint8_t> pt(text.begin(), text.end());
-                auto ct = prototype_functions::aes_encrypt(pt, current_key, current_iv);
+                // Hash the password
+                auto res = hash_password(pwd);
+                u.password = to_hex(res.salt) + ":" + to_hex(res.hash);
                 
-                std::cout << "Ciphertext (GCM): " << to_hex(ct) << "\n";
-                std::cout << "(Note: Last 16 bytes are the Auth Tag)\n";
-            }
-            else if (cmd == "decrypt") {
-                if (!key_ready) {
-                    std::cout << "Error: Generate or set a key first.\n";
-                    continue;
+                u.uuid = uuid_to_string(generate_uuid_v4());
+                u.last_seen = current_time_ms();
+                u.public_key_hex = "0xFEEDFACE"; 
+                u.is_contact = true;
+                
+                if (db.upsert_user(u)) {
+                    std::cout << "User '" << u.display_name << "' created.\n";
+                    std::cout << "UUID: " << u.uuid << "\n";
                 }
-                std::string hex; ss >> hex;
-                auto ct = from_hex(hex);
-                
-                auto pt = prototype_functions::aes_decrypt(ct, current_key, current_iv);
-                std::string result(pt.begin(), pt.end());
-                std::cout << "Decrypted Text: " << result << "\n";
             }
-            else if (cmd == "help") {
-                print_help();
+            else if (cmd == "users") {
+                auto users = db.list_all_users();
+                for (const auto& u : users) std::cout << u.uuid << " | " << u.display_name << "\n";
             }
-            else {
-                std::cout << "Unknown command. Type 'help' for options.\n";
+            else if (cmd == "finduser") {
+                std::string uuid; ss >> uuid;
+                UserEntry u;
+                if (db.get_user(uuid, u)) {
+                    std::cout << "UUID:   " << u.uuid << "\n";
+                    std::cout << "Name:   " << u.display_name << "\n";
+                    std::cout << "Status: " << u.status_text << "\n";
+                    std::cout << "Stored Credential (Salt:Hash): " << u.password << "\n";
+                } else std::cout << "Not found.\n";
             }
-        } catch (const std::exception& e) {
-            std::cout << "CRITICAL ERROR: " << e.what() << "\n";
-        }
+            else if (cmd == "logout") {
+                current_user_uuid = ""; current_user_name = "Guest";
+                std::cout << "Logged out.\n";
+            }
+            else if (cmd == "send") {
+                if (current_user_uuid.empty()) { std::cout << "Log in first!\n"; continue; }
+                std::string to, msg_text;
+                ss >> to; std::getline(ss >> std::ws, msg_text);
+                MessageEntry m;
+                m.sender_uuid = current_user_uuid; m.target_uuid = to;
+                m.timestamp = current_time_ms(); m.is_read = false;
+                m.encrypted_payload.assign(msg_text.begin(), msg_text.end());
+                m.iv.fill(0x55);
+                db.store_message(m); std::cout << "Sent.\n";
+            }
+            else if (cmd == "history") {
+                if (current_user_uuid.empty()) { std::cout << "Log in first!\n"; continue; }
+                auto msgs = db.get_messages_by_contact(current_user_uuid, 50);
+                for (const auto& m : msgs) {
+                    std::string content(m.encrypted_payload.begin(), m.encrypted_payload.end());
+                    std::cout << "[" << m.timestamp << "] " << (m.sender_uuid == current_user_uuid ? "Me" : "Them") << ": " << content << "\n";
+                }
+            }
+            else if (cmd == "wipe") {
+                db.wipe_all_data(); current_user_uuid = ""; current_user_name = "Guest";
+                std::cout << "Wiped.\n";
+            }
+            else if (cmd == "help") print_sim_help();
+        } catch (const std::exception& e) { std::cout << "Error: " << e.what() << "\n"; }
     }
-
     return 0;
 }

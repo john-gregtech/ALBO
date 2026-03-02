@@ -36,9 +36,10 @@ add_executable(ALBO
     src/aes256.cpp
     src/X25519.cpp
     src/password.cpp
+    src/argon2id.cpp
     src/network/linux/secure_mem.cpp
     src/network/universal/database.cpp
-    
+    src/network/universal/professionalprovider.cpp
 )
 
 if (WIN32)
@@ -47,8 +48,10 @@ if (WIN32)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/argon2id.cpp
         src/network/win/secure_mem.cpp
         src/network/universal/professionalprovider.cpp
+        src/network/universal/database.cpp
         src/network/win/client.cpp
         src/network/win/network_boiler.cpp
     )
@@ -58,8 +61,10 @@ if (WIN32)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/argon2id.cpp
         src/network/win/secure_mem.cpp
         src/network/universal/professionalprovider.cpp
+        src/network/universal/database.cpp
         src/network/win/server.cpp
         src/network/win/network_boiler.cpp
     )
@@ -69,8 +74,10 @@ elseif (UNIX)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/argon2id.cpp
         src/network/linux/secure_mem.cpp
         src/network/universal/professionalprovider.cpp
+        src/network/universal/database.cpp
         src/network/linux/client.cpp
     )
 
@@ -79,8 +86,10 @@ elseif (UNIX)
         src/aes256.cpp
         src/X25519.cpp
         src/password.cpp
+        src/argon2id.cpp
         src/network/linux/secure_mem.cpp
         src/network/universal/professionalprovider.cpp
+        src/network/universal/database.cpp
         src/network/linux/server.cpp
     )
 endif()
@@ -126,6 +135,7 @@ if (WIN32)
         PRIVATE
             OpenSSL::Crypto
             SQLite::SQLite3
+            argon2
             user32
             kernel32
             ws2_32
@@ -134,6 +144,7 @@ if (WIN32)
         PRIVATE
             OpenSSL::Crypto
             SQLite::SQLite3
+            argon2
             user32
             kernel32
             ws2_32
@@ -144,11 +155,13 @@ elseif (UNIX)
         PRIVATE
             OpenSSL::Crypto
             SQLite::SQLite3
+            argon2
     )
     target_link_libraries(LINUXSERVER
         PRIVATE
             OpenSSL::Crypto
             SQLite::SQLite3
+            argon2
     )
 endif()
 
