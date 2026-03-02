@@ -12,89 +12,64 @@
 - [x] **X25519:** Modern Elliptic Curve Diffie-Hellman (ECDH) primitives.
 - [x] **Secure Memory Management:** Platform-specific RAM wiping (`SecureZeroMemory` / `explicit_bzero`).
 - [x] **SHA-256:** Data integrity and hashing.
-- [x] **Per-Message Handshake:** Re-establishing a new Diffie-Hellman exchange for *every single message* to ensure maximum Forward Secrecy.
-- [x] **End-to-End Encryption (E2EE):** Ensuring the self-hosted server only acts as a mailbox for encrypted BLOBs it cannot read.
+- [x] **Per-Message Handshake:** Re-establishing a new Diffie-Hellman exchange for *every single message* using ephemeral keys.
+- [x] **End-to-End Encryption (E2EE):** Server only routes opaque binary blobs; decryption happens strictly on the client.
+- [x] **One-Time Pre-Keys (Signal-style):** Asynchronous encryption for offline users using pre-uploaded server-side public keys.
 
 ### **[NOT DONE]**
-- [ ] **Double Ratchet (Optional/Future):** Evaluate if a full Double Ratchet (Signal Protocol) is needed or if the per-message DH meets the security target.
-
----
-
-## 🖥️ User Interface (Qt GUI)
-
-### **[NOT DONE]**
-- [ ] **Qt Framework Integration:** Implement the main application window using Qt.
-- [ ] **Contact List Manager:** Visual representation of the address book.
-- [ ] **Message View:** Threaded conversation view with status indicators.
-- [ ] **Connection Manager:** Visual feedback for server status and handshake progress.
-- [ ] **Settings Panel:** Client-side configurations.
+- [ ] **Double Ratchet (Optional/Future):** Full session ratcheting for long-lived conversations.
+- [ ] **Identity Verification:** Hex-based fingerprinting for out-of-band contact verification.
 
 ---
 
 ## 🛰️ Networking & Wire Protocol
 
 ### **[DONE]**
-- [x] **Basic Socket Boilerplate:** Initial Windows/Linux networking code.
+- [x] **Binary "Envelope" Protocol:** Magic bytes (`ALBO`), fixed-size headers, and versioning.
+- [x] **Opaque Payload Routing:** Server-side UUID resolution and routing based ONLY on header data.
+- [x] **Session Locking:** Prevention of multiple simultaneous logins for the same account.
+- [x] **Sender Identification:** Injected `sender_name` in the protocol header for human-friendly recognition.
+- [x] **Post-Compile Configuration:** Server settings (`server.conf`) for Port and Database paths.
+- [x] **Thread-Safe Dispatcher:** Client-side single-reader model to prevent socket race conditions.
 
 ### **[NOT DONE]**
-- [ ] **Binary "Envelope" Protocol:** Define a structured packet header:
-    - [Version][PacketType][TotalLength][TargetUUID]
-- [ ] **Opaque Payload Routing:** The server routes packets based ONLY on the header; it never sees the encrypted payload content.
-- [ ] **Identity Challenge (Handshake):** Implement **Ed25519** digital signatures. The server sends a random challenge that the client must sign with their Private Key to prove identity.
-- [ ] **One-Time Pre-Keys (Signal-style):** Upload bundles of signed public keys to the server to allow sending the first message to an offline user with Immediate Forward Secrecy.
-- [ ] **Self-Hosted Server Core:** Standalone server binary that anyone can host.
-- [ ] **Post-Compile Configuration:** Extensive `config.json` or `.env` support for:
-    - Whitelists (Who can join).
-    - Logging Verbosity (Privacy vs. Debugging).
-    - Message Retention (Auto-delete or local storage).
-- [ ] **Async Networking:** Transition to non-blocking I/O (epoll/IOCP) for handling multiple concurrent group chats.
+- [ ] **Identity Challenge (Enforced):** Full Ed25519 signature verification during handshake (Primitives ready, enforcement pending).
+- [ ] **Async I/O Core:** Transition from threaded model to `epoll` (Linux) / `IOCP` (Windows).
+- [ ] **Heartbeats/Keep-alive:** Detecting ghost connections and cleaning up registry.
 
 ---
 
-## 🕵️ Privacy & User Discovery
+## 🪟 Windows vs. Linux Network Disparities
 
-### **[NOT DONE]**
-- [ ] **Private Discovery:** Servers will **not** reveal registered users to strangers.
-- [ ] **Address Book Requests:** Clients can only request status/info for contacts they already possess the UUID for.
-- [ ] **Group Chat Logic:** Encrypted group handling where the server manages distribution but not content.
-- [ ] **Identity Verification:** Hex-based fingerprinting for out-of-band contact verification.
+### **[CURRENT ARCHITECTURE]**
+- **Linux:** Uses POSIX sockets (`<sys/socket.h>`, `<arpa/inet.h>`).
+- **Windows:** Requires Winsock2 (`<winsock2.h>`, `<ws2tcpip.h>`) and `WSAStartup`/`WSACleanup` calls.
 
----
-
-## 📂 Database & Persistence
-
-### **[DONE]**
-- [x] **SQLite3 Integration:** Thread-safe C++ wrapper (`DatabaseManager`).
-- [x] **Message Schema:** Support for BLOBs (Ciphertext/IV) and metadata.
-- [x] **Contact Schema:** UUID-based local storage.
-
-### **[NOT DONE]**
-- [ ] **Server-Only Data Architecture:**
-    - **Global Users Table:** Core credentials and UUID mapping.
-    - **Global Address Book:** Table mapping Generic Users to Client addresses/metadata.
-    - **Dynamic Group Tables:** One table per Group Chat containing member lists and active status.
-    - **Activity Tracking:** "Active" flag per member to manage message routing (avoid sending to users who left).
-    - **Configurable Chat Logs:** Server-side toggle to store/discard message BLOBs.
-- [ ] **Server Auditing:** Rotating log files (`logfile_TIMESTAMP.txt`) for monitoring server health and connection history.
-- [ ] **Database Encryption:** At-rest encryption for the local SQLite database.
-- [ ] **Automated Backups:** Secure export of the local address book.
-
----
-
-## 🔄 Identity & Multi-Device Sync
-
-### **[NOT DONE]**
-- [ ] **Cross-Platform Account Sync:** Instant synchronization of address books and keys between Linux and Windows upon login.
-- [ ] **Session Handover:** Seamlessly transitioning active handshakes from one device to another.
-- [ ] **State Reconciliation:** Ensuring message history is consistent across all logged-in devices.
+### **[ROADMAP FOR UNIFICATION]**
+- [ ] **Abstraction Layer:** Create a `UniversalSocket` class to hide `recv` vs `recv` and `send` vs `send` differences.
+- [ ] **Byte Order:** Ensure `uint64_t` UUID parts are handled with `ntohll`/`htonll` to prevent Big-Endian/Little-Endian corruption between OSs.
+- [ ] **Secure Memory:** Use the existing `secure_erase` abstraction to handle `explicit_bzero` vs `SecureZeroMemory`.
+- [ ] **Pathing:** Support `%APPDATA%` on Windows vs `~/.local/share` on Linux for database storage.
 
 ---
 
 ## 📣 Advanced Group Messaging Logic
 
 ### **[NOT DONE]**
-- [ ] **Virtual User Routing:** Treating group chats as "Virtual Users" on the server. Messages sent to a Group UUID are automatically routed/broadcasted to all members by the server.
+- [ ] **Virtual User Routing:** Group chats as "Virtual Users" on the server.
 - [ ] **Standard Group Chats:** Full E2EE group messaging where all members see all responses.
-- [ ] **Broadcast (Batch) Groups:** Specialized groups where a "Manager" sends a message to all members, but member replies are routed **privately** back to the Manager only.
-- [ ] **Role Management:** "Group Manager" permissions for whitelisting members, removing users, and changing group visibility.
-- [ ] **Customizable Group Behaviors:** Server-side configuration to toggle between Broadcast, Normal, and Restricted group modes.
+- [ ] **Broadcast (Batch) Groups:** Responses routed privately back to the Manager only.
+
+---
+
+## 📂 Database & Persistence
+
+### **[DONE]**
+- [x] **Standardized Storage:** Linux data path `~/.local/share/albo/`.
+- [x] **Store-and-Forward:** Offline message queue with automatic push-on-login.
+- [x] **Local Vault:** Client-side DB for private pre-keys and message history.
+- [x] **Unique Usernames:** Case-insensitive, unique human-friendly names.
+
+### **[NOT DONE]**
+- [ ] **Database Encryption:** At-rest encryption for the local SQLite database.
+- [ ] **Rotating Logs:** Timestamped server audit files.
