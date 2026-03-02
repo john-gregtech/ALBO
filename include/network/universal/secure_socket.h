@@ -15,6 +15,7 @@ namespace prototype::network {
         SSL* ssl = nullptr;
         SSL_CTX* ctx = nullptr;
         bool is_secure = false;
+        bool is_server = false; // Add this flag
 
         std::mutex send_mtx;
         std::mutex recv_mtx;

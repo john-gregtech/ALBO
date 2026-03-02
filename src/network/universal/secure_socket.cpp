@@ -19,7 +19,7 @@ namespace prototype::network {
         const SSL_METHOD* method = TLS_server_method();
         SSL_CTX* ctx = SSL_CTX_new(method);
         if (!ctx) {
-            perror("Unable to create SSL context");
+            ALBO_LOG("Unable to create SSL server context");
             ERR_print_errors_fp(stderr);
             exit(EXIT_FAILURE);
         }
@@ -30,15 +30,17 @@ namespace prototype::network {
         const SSL_METHOD* method = TLS_client_method();
         SSL_CTX* ctx = SSL_CTX_new(method);
         if (!ctx) {
-            perror("Unable to create SSL context");
+            ALBO_LOG("Unable to create SSL client context");
             ERR_print_errors_fp(stderr);
             exit(EXIT_FAILURE);
         }
+        // For self-signed certs in this hobby phase, we skip verification
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
         return ctx;
     }
 
     SecureSocketManager::SecureSocketManager(int fd, SSL_CTX* context, bool as_server) 
-        : sock_fd(fd), ctx(context) {
+        : sock_fd(fd), ctx(context), is_server(as_server) {
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, sock_fd);
     }
@@ -52,14 +54,20 @@ namespace prototype::network {
     }
 
     bool SecureSocketManager::perform_handshake() {
-        int res = SSL_accept(ssl); // Assume server mode for now, can be toggled
+        int res = 0;
+        if (is_server) {
+            res = SSL_accept(ssl);
+        } else {
+            res = SSL_connect(ssl);
+        }
+
         if (res <= 0) {
-            ALBO_LOG("TLS Handshake Failed.");
+            ALBO_LOG("TLS Handshake Failed (" << (is_server ? "Server" : "Client") << ")");
             ERR_print_errors_fp(stderr);
             return false;
         }
         is_secure = true;
-        ALBO_LOG("TLS Tunnel Established.");
+        ALBO_DEBUG("TLS Tunnel Established.");
         return true;
     }
 
