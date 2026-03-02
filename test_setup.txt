@@ -1,0 +1,6 @@
+adduser pass1 Alice SecretUser
+adduser pass2 Bob TargetUser
+login <ALICE_UUID> pass1
+send <BOB_UUID> This is a top secret message.
+logout
+

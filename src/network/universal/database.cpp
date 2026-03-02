@@ -114,6 +114,44 @@ namespace prototype::database {
         return results;
     }
 
+    std::vector<MessageEntry> DatabaseManager::get_chat_history(const std::string& u1, const std::string& u2, int limit) {
+        std::lock_guard<std::mutex> lock(db_mutex);
+        std::vector<MessageEntry> results;
+
+        const char* sql = "SELECT id, sender_uuid, target_uuid, encrypted_payload, iv, timestamp, is_read "
+                          "FROM messages WHERE (sender_uuid = ? AND target_uuid = ?) "
+                          "OR (sender_uuid = ? AND target_uuid = ?) "
+                          "ORDER BY timestamp ASC LIMIT ?;";
+
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return results;
+
+        sqlite3_bind_text(stmt, 1, u1.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, u2.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, u2.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, u1.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 5, limit);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            MessageEntry entry;
+            entry.id = sqlite3_column_int64(stmt, 0);
+            entry.sender_uuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            entry.target_uuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+
+            const uint8_t* p_ptr = static_cast<const uint8_t*>(sqlite3_column_blob(stmt, 3));
+            entry.encrypted_payload.assign(p_ptr, p_ptr + sqlite3_column_bytes(stmt, 3));
+
+            const uint8_t* iv_ptr = static_cast<const uint8_t*>(sqlite3_column_blob(stmt, 4));
+            std::memcpy(entry.iv.data(), iv_ptr, 16);
+
+            entry.timestamp = sqlite3_column_int64(stmt, 5);
+            entry.is_read = (sqlite3_column_int(stmt, 6) != 0);
+            results.push_back(std::move(entry));
+        }
+        sqlite3_finalize(stmt);
+        return results;
+    }
+
     bool DatabaseManager::clear_messages(const std::string& contact_uuid) {
         std::lock_guard<std::mutex> lock(db_mutex);
         const char* sql = "DELETE FROM messages WHERE sender_uuid = ? OR target_uuid = ?;";

@@ -183,6 +183,20 @@ int main() {
                     std::cout << "[" << m.timestamp << "] " << (m.sender_uuid == current_user_uuid ? "Me" : "Them") << ": " << content << "\n";
                 }
             }
+            else if (cmd == "chat") {
+                if (current_user_uuid.empty()) { std::cout << "Log in first!\n"; continue; }
+                std::string u2; ss >> u2;
+                auto msgs = db.get_chat_history(current_user_uuid, u2, 50);
+                std::cout << "--- Conversation with " << u2 << " ---\n";
+                for (const auto& m : msgs) {
+                    std::string content(m.encrypted_payload.begin(), m.encrypted_payload.end());
+                    std::cout << "[" << m.timestamp << "] " << (m.sender_uuid == current_user_uuid ? "Me" : "Them") << ": " << content << "\n";
+                }
+            }
+            else if (cmd == "clear") {
+                std::string uuid; ss >> uuid;
+                if (db.clear_messages(uuid)) std::cout << "Messages for contact " << uuid << " cleared.\n";
+            }
             else if (cmd == "wipe") {
                 db.wipe_all_data(); current_user_uuid = ""; current_user_name = "Guest";
                 std::cout << "Wiped.\n";

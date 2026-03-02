@@ -55,6 +55,7 @@ namespace prototype::database {
         // Messaging specific functions
         bool store_message(const MessageEntry& msg);
         std::vector<MessageEntry> get_messages_by_contact(const std::string& contact_uuid, int limit = 50);
+        std::vector<MessageEntry> get_chat_history(const std::string& u1, const std::string& u2, int limit = 50);
         bool clear_messages(const std::string& contact_uuid);
         bool wipe_all_data();
 
