@@ -35,6 +35,8 @@ add_executable(ALBO
     src/sha256.cpp
     src/aes256.cpp
     src/X25519.cpp
+    src/network/universal/ed25519.cpp
+    src/network/universal/config_manager.cpp
     src/password.cpp
     src/argon2id.cpp
     src/network/linux/secure_mem.cpp
@@ -48,6 +50,8 @@ if (WIN32)
         src/sha256.cpp
         src/aes256.cpp
         src/X25519.cpp
+        src/network/universal/ed25519.cpp
+        src/network/universal/config_manager.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/win/secure_mem.cpp
@@ -61,6 +65,8 @@ if (WIN32)
         src/sha256.cpp
         src/aes256.cpp
         src/X25519.cpp
+        src/network/universal/ed25519.cpp
+        src/network/universal/config_manager.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/win/secure_mem.cpp
@@ -74,6 +80,8 @@ elseif (UNIX)
         src/sha256.cpp
         src/aes256.cpp
         src/X25519.cpp
+        src/network/universal/ed25519.cpp
+        src/network/universal/config_manager.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/linux/secure_mem.cpp
@@ -87,6 +95,8 @@ elseif (UNIX)
         src/sha256.cpp
         src/aes256.cpp
         src/X25519.cpp
+        src/network/universal/ed25519.cpp
+        src/network/universal/config_manager.cpp
         src/password.cpp
         src/argon2id.cpp
         src/network/linux/secure_mem.cpp
@@ -195,4 +205,12 @@ elseif (UNIX)
     set_target_properties(LINUXSERVER PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
     )
+
+    add_executable(TEST_ED25519
+        src/debugging/test_ed25519.cpp
+        src/network/universal/ed25519.cpp
+        src/network/linux/secure_mem.cpp
+    )
+    target_link_libraries(TEST_ED25519 PRIVATE OpenSSL::Crypto)
+    target_include_directories(TEST_ED25519 PRIVATE ${PROJECT_SOURCE_DIR}/include)
 endif()

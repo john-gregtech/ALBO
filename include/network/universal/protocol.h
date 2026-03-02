@@ -8,21 +8,23 @@ namespace prototype::network {
     constexpr uint8_t PROTOCOL_VERSION = 0x01;
 
     enum class PacketType : uint8_t {
-        LOGIN_REQUEST     = 0x00,
-        LOGIN_SUCCESS     = 0x01,
-        LOGIN_FAIL        = 0x02,
-        REGISTER_REQUEST  = 0x03,
-        REGISTER_SUCCESS  = 0x04,
-        REGISTER_FAIL     = 0x05,
-        MESSAGE_DATA      = 0x06, // Encrypted AES-GCM Blob
-        FILE_CHUNK        = 0x07,
-        PING              = 0x08,
-        ROUTE_FAIL        = 0x09, // Target user not found (offline)
-        RESOLVE_FAIL      = 0x0A, // Username not found in DB
-        INBOX_FETCH       = 0x0B, // Request offline messages
-        PREKEY_UPLOAD     = 0x0C, // Upload public pre-keys
-        PREKEY_FETCH      = 0x0D, // Fetch target's public pre-key
-        PREKEY_RESPONSE   = 0x0E, // Server sends the requested pre-key
+        AUTH_CHALLENGE    = 0x00, // Server -> Client
+        AUTH_RESPONSE     = 0x01, // Client -> Server
+        LOGIN_REQUEST     = 0x02,
+        LOGIN_SUCCESS     = 0x03,
+        LOGIN_FAIL        = 0x04,
+        REGISTER_REQUEST  = 0x05,
+        REGISTER_SUCCESS  = 0x06,
+        REGISTER_FAIL     = 0x07,
+        MESSAGE_DATA      = 0x08, 
+        FILE_CHUNK        = 0x09,
+        PING              = 0x0A,
+        ROUTE_FAIL        = 0x0B,
+        RESOLVE_FAIL      = 0x0C,
+        INBOX_FETCH       = 0x0D,
+        PREKEY_UPLOAD     = 0x0E,
+        PREKEY_FETCH      = 0x0F,
+        PREKEY_RESPONSE   = 0x10,
         DISCONNECT        = 0xFF
     };
 
@@ -32,8 +34,9 @@ namespace prototype::network {
         uint8_t version;       // Protocol version
         PacketType type;       // What kind of packet is this?
         uint32_t payload_size; // How many bytes follow this header?
-        uint64_t target_high;  // UUID Routing (High)
-        uint64_t target_low;   // UUID Routing (Low)
+        uint64_t target_high;  // UUID (High)
+        uint64_t target_low;   // UUID (Low)
+        char sender_name[16];  // Sender's username for display
     };
     #pragma pack(pop)
 

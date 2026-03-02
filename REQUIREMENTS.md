@@ -12,11 +12,11 @@
 - [x] **X25519:** Modern Elliptic Curve Diffie-Hellman (ECDH) primitives.
 - [x] **Secure Memory Management:** Platform-specific RAM wiping (`SecureZeroMemory` / `explicit_bzero`).
 - [x] **SHA-256:** Data integrity and hashing.
+- [x] **Per-Message Handshake:** Re-establishing a new Diffie-Hellman exchange for *every single message* to ensure maximum Forward Secrecy.
+- [x] **End-to-End Encryption (E2EE):** Ensuring the self-hosted server only acts as a mailbox for encrypted BLOBs it cannot read.
 
 ### **[NOT DONE]**
-- [ ] **Per-Message Handshake:** Re-establishing a new Diffie-Hellman exchange for *every single message* to ensure maximum Forward Secrecy.
 - [ ] **Double Ratchet (Optional/Future):** Evaluate if a full Double Ratchet (Signal Protocol) is needed or if the per-message DH meets the security target.
-- [ ] **End-to-End Encryption (E2EE):** Ensuring the self-hosted server only acts as a mailbox for encrypted BLOBs it cannot read.
 
 ---
 

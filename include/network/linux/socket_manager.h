@@ -4,12 +4,15 @@
 #include <unistd.h>
 #include <vector>
 #include <optional>
+#include <mutex>
 #include "network/universal/packet.h"
 
 namespace prototype::network {
     class LinuxSocketManager {
     private:
         int sock_fd = -1;
+        std::mutex send_mtx;
+        std::mutex recv_mtx;
 
     public:
         explicit LinuxSocketManager(int fd) : sock_fd(fd) {}
