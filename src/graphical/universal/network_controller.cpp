@@ -7,6 +7,7 @@
 #include <thread>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 namespace prototype::network {
 
@@ -31,23 +32,53 @@ namespace prototype::network {
     }
 
     void NetworkController::connectToServer(const std::string& ip, int port) {
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        sockaddr_in s_addr{};
-        s_addr.sin_family = AF_INET; s_addr.sin_port = htons(port);
-        inet_pton(AF_INET, ip.c_str(), &s_addr.sin_addr);
+        std::thread([this, ip, port]() {
+            int sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock < 0) {
+                emit logMessage("Failed to create socket.");
+                return;
+            }
 
-        if (::connect(sock, (struct sockaddr*)&s_addr, sizeof(s_addr)) < 0) {
-            emit logMessage("Connection failed."); return;
-        }
+            // Set a timeout for the connect() call
+            struct timeval tv;
+            tv.tv_sec = 3;  // 3 seconds timeout
+            tv.tv_usec = 0;
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 
-        manager = std::make_shared<prototype::network::SecureSocketManager>(sock, ssl_ctx, false);
-        if (!manager->perform_handshake()) {
-            emit logMessage("TLS Handshake Failed."); return;
-        }
+            sockaddr_in s_addr{};
+            s_addr.sin_family = AF_INET; 
+            s_addr.sin_port = htons(port);
+            if (inet_pton(AF_INET, ip.c_str(), &s_addr.sin_addr) <= 0) {
+                emit logMessage("Invalid IP address format.");
+                close(sock);
+                return;
+            }
 
-        is_running = true;
-        std::thread([this]() { run_receiver(); }).detach();
-        emit connectionEstablished();
+            if (::connect(sock, (struct sockaddr*)&s_addr, sizeof(s_addr)) < 0) {
+                emit logMessage("Connection failed: Server unreachable or timed out."); 
+                close(sock);
+                return;
+            }
+
+            // Reset timeouts for normal operation
+            struct timeval reset_tv;
+            reset_tv.tv_sec = 0; 
+            reset_tv.tv_usec = 0;
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&reset_tv, sizeof(reset_tv));
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&reset_tv, sizeof(reset_tv));
+
+            manager = std::make_shared<prototype::network::SecureSocketManager>(sock, ssl_ctx, false);
+            if (!manager->perform_handshake()) {
+                emit logMessage("TLS Handshake Failed."); 
+                return;
+            }
+
+            is_running = true;
+            std::thread([this]() { run_receiver(); }).detach();
+            emit connectionEstablished();
+            emit logMessage("Successfully connected to " + QString::fromStdString(ip));
+        }).detach();
     }
 
     void NetworkController::performLogin(const std::string& user, const std::string& pwd) {

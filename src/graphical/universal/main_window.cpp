@@ -211,7 +211,15 @@ namespace prototype::graphical {
     }
 
     void MainWindow::onChangeServer() {
-        QMessageBox::information(this, "Network", "Switching servers...");
+        bool ok;
+        QString ip = QInputDialog::getText(this, "Change Server", "Server IP:", QLineEdit::Normal, "127.0.0.1", &ok);
+        if (ok && !ip.isEmpty()) {
+            int port = QInputDialog::getInt(this, "Change Server", "Server Port:", 5555, 1, 65535, 1, &ok);
+            if (ok) {
+                chat_display->append("<i>SYSTEM: Connecting to " + ip + ":" + QString::number(port) + "...</i>");
+                controller->connectToServer(ip.toStdString(), port);
+            }
+        }
     }
 
 }
