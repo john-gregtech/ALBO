@@ -180,6 +180,7 @@ namespace prototype::graphical {
     }
 
     void MainWindow::onLogout() {
+        controller->performLogout();
         update_account_state(false);
         chat_display->append("<i>SYSTEM: Logged out.</i>");
     }

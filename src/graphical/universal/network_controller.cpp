@@ -105,6 +105,19 @@ namespace prototype::network {
         manager->send_packet(p);
     }
 
+    void NetworkController::performLogout() {
+        if (!manager) return;
+        
+        prototype::network::RawPacket p;
+        p.header.type = prototype::network::PacketType::DISCONNECT;
+        manager->send_packet(p);
+        
+        my_uuid.clear();
+        my_username.clear();
+        session_key.clear();
+        emit logMessage("Session terminated with server.");
+    }
+
     void NetworkController::sendMessage(const std::string& target, const std::string& text) {
         if (!manager) return;
 

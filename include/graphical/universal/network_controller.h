@@ -22,6 +22,7 @@ namespace prototype::network {
         void connectToServer(const std::string& ip, int port);
         void performLogin(const std::string& user, const std::string& pwd);
         void performRegistration(const std::string& user, const std::string& pwd);
+        void performLogout();
         void sendMessage(const std::string& target, const std::string& text);
         std::vector<prototype::database::MessageEntry> fetchHistory(const std::string& contact_name);
         void addContact(const std::string& name);

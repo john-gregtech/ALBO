@@ -99,6 +99,11 @@ namespace prototype::network {
                 else success = auth_service.handle_registration(packet, manager, my_uuid, my_username);
 
                 if (success) {
+                    // BEFORE registering new session, remove any old session tied to this same socket if it exists
+                    if (!my_uuid.empty()) {
+                        global_registry.remove_session(my_uuid);
+                    }
+
                     RawPacket ok; ok.header.type = (packet.header.type == PacketType::LOGIN_REQUEST) ? PacketType::LOGIN_SUCCESS : PacketType::REGISTER_SUCCESS;
                     ok.payload.assign(my_uuid.begin(), my_uuid.end()); ok.header.payload_size = ok.payload.size();
                     manager->send_packet(ok);
@@ -117,6 +122,15 @@ namespace prototype::network {
                     RawPacket fail; fail.header.type = (packet.header.type == PacketType::LOGIN_REQUEST) ? PacketType::LOGIN_FAIL : PacketType::REGISTER_FAIL;
                     manager->send_packet(fail);
                 }
+            }
+            else if (packet.header.type == PacketType::DISCONNECT) {
+                if (!my_uuid.empty()) {
+                    global_registry.remove_session(my_uuid);
+                    my_uuid.clear();
+                    my_username.clear();
+                }
+                ALBO_LOG("[SESSION] Client requested disconnect.");
+                // We don't break the loop here because the client might want to log in as someone else on the same connection
             }
             else if (packet.header.type == PacketType::CONTACT_ADD) {
                 if (my_uuid.empty()) continue;
