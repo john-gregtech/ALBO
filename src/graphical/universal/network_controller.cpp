@@ -134,6 +134,7 @@ namespace prototype::network {
             // Construct and send packet
             prototype::network::RawPacket p;
             p.header.type = prototype::network::PacketType::MESSAGE_DATA;
+            std::strncpy(p.header.sender_name, my_username.c_str(), 15);
             string_to_uuid_parts(user.uuid, p.header.target_high, p.header.target_low);
             
             // For now we'll just send the text, in a full version we'd encrypt it here.
@@ -199,6 +200,7 @@ namespace prototype::network {
             }
             else if (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS || in->header.type == prototype::network::PacketType::REGISTER_SUCCESS) {
                 my_uuid.assign(in->payload.begin(), in->payload.end());
+                my_username = temp_user; // Store username
                 emit authResult(true, (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS ? "Login Successful" : "Registration Successful"));
                 syncPreKeys();
                 // Request contact list

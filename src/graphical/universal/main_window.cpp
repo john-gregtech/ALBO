@@ -60,7 +60,7 @@ namespace prototype::graphical {
 
             QString target = item->text(0);
             controller->sendMessage(target.toStdString(), text.toStdString());
-            chat_display->append("<b>YOU -> " + target + ":</b> " + text);
+            chat_display->append("<b>[YOU]:</b> " + text);
             input_box->clear();
         });
 
@@ -75,7 +75,7 @@ namespace prototype::graphical {
                 auto history = controller->fetchHistory(name.toStdString());
                 std::string my_uuid = controller->getMyUUID();
                 for (auto& h : history) {
-                    QString label = (h.sender_uuid == my_uuid) ? "YOU" : name;
+                    QString label = (h.sender_uuid == my_uuid) ? "[YOU]" : name;
                     chat_display->append("<b>" + label + ":</b> " + QString::fromStdString(std::string(h.encrypted_payload.begin(), h.encrypted_payload.end())));
                 }
             }
