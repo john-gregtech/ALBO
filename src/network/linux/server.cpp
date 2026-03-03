@@ -24,6 +24,9 @@
 #include "network/linux/server/rate_limiter.h"
 #include "cryptowrapper/argon2id.h"
 #include "cryptowrapper/ed25519.h"
+#include "cryptowrapper/X25519.h"
+#include "cryptowrapper/aes256.h"
+#include "cryptowrapper/sha256.h"
 #include <openssl/rand.h>
 
 namespace prototype::network {
@@ -43,6 +46,7 @@ namespace prototype::network {
         prototype::network::RoutingHandler route_service(db, &global_registry);
         std::string my_uuid = "";
         std::string my_username = "";
+        std::vector<uint8_t> session_key; // For encrypted auth
 
         std::vector<uint8_t> challenge(32); RAND_bytes(challenge.data(), 32);
         RawPacket p_challenge; p_challenge.header.type = PacketType::AUTH_CHALLENGE;
@@ -55,7 +59,41 @@ namespace prototype::network {
 
             RawPacket& packet = *packet_opt;
 
+            if (packet.header.type == PacketType::KEY_EXCHANGE_INIT) {
+                if (packet.payload.size() == 32) {
+                    std::array<uint8_t, 32> client_pub;
+                    std::memcpy(client_pub.data(), packet.payload.data(), 32);
+                    auto s_pair = prototype::cryptowrapper::generate_x25519_keypair();
+                    auto secret = prototype::cryptowrapper::compute_shared_secret(s_pair.priv, client_pub);
+                    auto hash_arr = prototype_functions::sha256_hash(std::string(secret.begin(), secret.end()));
+                    session_key.assign(hash_arr.begin(), hash_arr.end());
+                    
+                    RawPacket resp;
+                    resp.header.type = PacketType::KEY_EXCHANGE_ACK;
+                    resp.payload.assign(s_pair.pub.begin(), s_pair.pub.end());
+                    resp.header.payload_size = resp.payload.size();
+                    manager->send_packet(resp);
+                }
+                continue;
+            }
+
             if (packet.header.type == PacketType::LOGIN_REQUEST || packet.header.type == PacketType::REGISTER_REQUEST) {
+                if (!session_key.empty()) {
+                    if (packet.payload.size() < 16 + 16) continue; // IV + Tag
+                    std::array<uint8_t, 16> iv; std::memcpy(iv.data(), packet.payload.data(), 16);
+                    std::vector<uint8_t> ct(packet.payload.begin() + 16, packet.payload.end());
+                    
+                    std::array<uint8_t, 32> key_arr;
+                    std::copy(session_key.begin(), session_key.begin() + 32, key_arr.begin());
+                    
+                    try {
+                        auto pt = prototype_functions::aes_decrypt(ct, key_arr, iv);
+                        packet.payload = pt; // Decrypt in place
+                    } catch (...) {
+                        continue; // Decryption failed
+                    }
+                }
+
                 bool success = false;
                 if (packet.header.type == PacketType::LOGIN_REQUEST) success = auth_service.handle_login(packet, manager, my_uuid, my_username);
                 else success = auth_service.handle_registration(packet, manager, my_uuid, my_username);

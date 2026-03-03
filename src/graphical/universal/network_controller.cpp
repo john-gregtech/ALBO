@@ -1,6 +1,9 @@
 #include "graphical/universal/network_controller.h"
 #include "config.h"
 #include "network/universal/hex_utils.h"
+#include "cryptowrapper/X25519.h"
+#include "cryptowrapper/aes256.h"
+#include "cryptowrapper/sha256.h"
 #include <thread>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -16,6 +19,8 @@ namespace prototype::network {
         crypto = std::make_shared<prototype::network::CryptoService>(local_db);
         identity = std::make_unique<prototype::network::IdentityManager>(local_db);
         identity->load_or_generate();
+        session_key.clear();
+        ephemeral_keys = prototype::cryptowrapper::generate_x25519_keypair();
     }
 
     NetworkController::~NetworkController() {
@@ -46,12 +51,25 @@ namespace prototype::network {
     }
 
     void NetworkController::performLogin(const std::string& user, const std::string& pwd) {
+        temp_user = user;
+        temp_pass = pwd;
+        is_registering = false;
+        startKeyExchange();
+    }
+
+    void NetworkController::performRegistration(const std::string& user, const std::string& pwd) {
+        temp_user = user;
+        temp_pass = pwd;
+        is_registering = true;
+        startKeyExchange();
+    }
+
+    void NetworkController::startKeyExchange() {
         if (!manager) return;
-        my_username = user;
+        ephemeral_keys = prototype::cryptowrapper::generate_x25519_keypair();
         prototype::network::RawPacket p;
-        p.header.type = prototype::network::PacketType::LOGIN_REQUEST;
-        std::string auth = prototype::network::to_lowercase(user) + ":" + pwd;
-        p.payload.assign(auth.begin(), auth.end());
+        p.header.type = prototype::network::PacketType::KEY_EXCHANGE_INIT;
+        p.payload.assign(ephemeral_keys.pub.begin(), ephemeral_keys.pub.end());
         p.header.payload_size = p.payload.size();
         manager->send_packet(p);
     }
@@ -133,14 +151,49 @@ namespace prototype::network {
                 entry.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 local_db->store_message_dynamic(sender_uuid, entry);
             }
-            else if (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS) {
+            else if (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS || in->header.type == prototype::network::PacketType::REGISTER_SUCCESS) {
                 my_uuid.assign(in->payload.begin(), in->payload.end());
-                emit authResult(true, "Login Successful");
+                emit authResult(true, (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS ? "Login Successful" : "Registration Successful"));
                 syncPreKeys();
                 // Request contact list
                 prototype::network::RawPacket req;
                 req.header.type = prototype::network::PacketType::CONTACT_LIST_REQ;
                 manager->send_packet(req);
+            }
+            else if (in->header.type == prototype::network::PacketType::LOGIN_FAIL || in->header.type == prototype::network::PacketType::REGISTER_FAIL) {
+                emit authResult(false, (in->header.type == prototype::network::PacketType::LOGIN_FAIL ? "Invalid username or password." : "Registration failed. Username may be taken."));
+            }
+            else if (in->header.type == prototype::network::PacketType::KEY_EXCHANGE_ACK) {
+                if (in->payload.size() < 32) { emit authResult(false, "Key exchange failed."); continue; }
+                std::array<uint8_t, 32> server_pub;
+                std::memcpy(server_pub.data(), in->payload.data(), 32);
+                
+                // Derive Secret
+                auto secret = prototype::cryptowrapper::compute_shared_secret(ephemeral_keys.priv, server_pub);
+                auto hash_arr = prototype_functions::sha256_hash(std::string(secret.begin(), secret.end()));
+                session_key.assign(hash_arr.begin(), hash_arr.end());
+
+                std::array<uint8_t, 32> key_arr;
+                std::copy(session_key.begin(), session_key.begin() + 32, key_arr.begin());
+
+                // Encrypt Credentials
+                std::string raw_auth = prototype::network::to_lowercase(temp_user) + ":" + temp_pass;
+                if (is_registering) raw_auth += ":" + temp_user; // Add Display Name for registration
+                
+                auto iv = prototype_functions::generate_initialization_vector();
+                auto ct = prototype_functions::aes_encrypt(std::vector<uint8_t>(raw_auth.begin(), raw_auth.end()), key_arr, iv);
+                
+                // Construct Packet [IV (16) + Ciphertext]
+                prototype::network::RawPacket p;
+                p.header.type = is_registering ? prototype::network::PacketType::REGISTER_REQUEST : prototype::network::PacketType::LOGIN_REQUEST;
+                p.payload.resize(16 + ct.size());
+                std::memcpy(p.payload.data(), iv.data(), 16);
+                std::memcpy(p.payload.data() + 16, ct.data(), ct.size());
+                p.header.payload_size = p.payload.size();
+                manager->send_packet(p);
+                
+                // Clear Temps
+                temp_user.clear(); temp_pass.clear();
             }
             else if (in->header.type == prototype::network::PacketType::CONTACT_ADD) {
                 std::string payload(in->payload.begin(), in->payload.end());
@@ -170,9 +223,6 @@ namespace prototype::network {
                         emit contactAdded(QString::fromStdString(uuid), QString::fromStdString(name));
                     }
                 }
-            }
-            else if (in->header.type == prototype::network::PacketType::LOGIN_FAIL) {
-                emit authResult(false, "Invalid username or password.");
             }
             else if (in->header.type == prototype::network::PacketType::AUTH_CHALLENGE) {
                 auto sig = prototype::cryptowrapper::sign_message(in->payload, identity->get_private_key());

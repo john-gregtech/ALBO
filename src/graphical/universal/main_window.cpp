@@ -171,7 +171,7 @@ namespace prototype::graphical {
             QString pass = dlg.getPassword();
             if (dlg.isRegistering()) {
                 chat_display->append("<i>SYSTEM: Attempting registration for " + user + "...</i>");
-                // (Need registration implementation in controller)
+                controller->performRegistration(user.toStdString(), pass.toStdString());
             } else {
                 chat_display->append("<i>SYSTEM: Logging in as " + user + "...</i>");
                 controller->performLogin(user.toStdString(), pass.toStdString());

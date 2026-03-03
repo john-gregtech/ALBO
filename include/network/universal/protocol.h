@@ -34,6 +34,8 @@ namespace prototype::network {
         CONTACT_REMOVE    = 0x17,
         CONTACT_LIST_REQ  = 0x18, // Client -> Server
         CONTACT_LIST_RESP = 0x19, // Server -> Client (Payload: serialized list)
+        KEY_EXCHANGE_INIT = 0x20, // Client -> Server (Payload: Client PubKey)
+        KEY_EXCHANGE_ACK  = 0x21, // Server -> Client (Payload: Server PubKey)
         DISCONNECT        = 0xFF
     };
 

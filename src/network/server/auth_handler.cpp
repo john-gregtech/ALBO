@@ -67,14 +67,14 @@ namespace prototype::network {
         }
         parts.push_back(payload.substr(start));
 
-        if (parts.size() < 3) return false;
+        if (parts.size() < 2) return false;
 
         std::string username = prototype::network::to_lowercase(parts[0]);
         prototype::database::UserEntry existing;
         if (!db->get_user_by_name(username, existing)) {
             prototype::database::UserEntry neu;
             neu.username = username;
-            neu.display_name = parts[2];
+            neu.display_name = (parts.size() >= 3) ? parts[2] : parts[0];
             
             auto res = prototype::cryptowrapper::hash_password(parts[1]);
             neu.password = prototype::network::to_hex(res.salt) + ":" + prototype::network::to_hex(res.hash);
