@@ -30,6 +30,10 @@ namespace prototype::network {
         GROUP_CREATE      = 0x13,
         GROUP_INVITE      = 0x14,
         GROUP_MSG         = 0x15,
+        CONTACT_ADD       = 0x16, // Client -> Server (Payload: Username)
+        CONTACT_REMOVE    = 0x17,
+        CONTACT_LIST_REQ  = 0x18, // Client -> Server
+        CONTACT_LIST_RESP = 0x19, // Server -> Client (Payload: serialized list)
         DISCONNECT        = 0xFF
     };
 

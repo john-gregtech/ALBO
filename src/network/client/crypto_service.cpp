@@ -42,7 +42,7 @@ namespace prototype::network {
     }
 
     std::string CryptoService::decrypt_packet(const RawPacket& packet) {
-        if (packet.payload.size() < 56) return "";
+        if (packet.payload.size() < 56) return std::string(packet.payload.begin(), packet.payload.end());
         uint64_t key_id; std::memcpy(&key_id, packet.payload.data(), 8);
         std::array<uint8_t, 32> eph_pub; std::memcpy(eph_pub.data(), packet.payload.data() + 8, 32);
         std::array<uint8_t, 16> iv; std::memcpy(iv.data(), packet.payload.data() + 40, 16);
@@ -58,7 +58,7 @@ namespace prototype::network {
             local_db->delete_pre_key(key_id);
             return std::string(pt.begin(), pt.end());
         }
-        return "[Error: Decryption Failed]";
+        return std::string(packet.payload.begin(), packet.payload.end());
     }
 
 }

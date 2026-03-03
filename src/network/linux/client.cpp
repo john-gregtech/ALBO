@@ -10,6 +10,8 @@
 #include <limits>
 #include <filesystem>
 #include <thread>
+#include <queue>
+#include <condition_variable>
 
 #include "config.h"
 #include "network/universal/secure_socket.h"
@@ -24,6 +26,15 @@
 using namespace prototype::network;
 using namespace prototype::database;
 using namespace prototype::cryptowrapper;
+
+void ss_uuid_format_client(std::stringstream& ss, uint64_t high, uint64_t low) {
+    ss << std::hex << std::setfill('0');
+    ss << std::setw(8) << (uint32_t)(high >> 32) << "-";
+    ss << std::setw(4) << (uint16_t)(high >> 16) << "-";
+    ss << std::setw(4) << (uint16_t)high << "-";
+    ss << std::setw(4) << (uint16_t)(low >> 48) << "-";
+    ss << std::setw(12) << (low & 0xFFFFFFFFFFFFULL);
+}
 
 void string_to_uuid_parts_client(const std::string& uuid_str, uint64_t& high, uint64_t& low) {
     std::string clean = uuid_str;
@@ -60,29 +71,27 @@ int main() {
     FileTransferManager files;
     identity.load_or_generate();
 
-    std::thread receiver([manager, &dispatcher, crypto, &files]() {
+    std::thread receiver([manager, &dispatcher, crypto, &files, &local_db]() {
         while (true) {
             auto in = manager->receive_packet();
             if (!in) break;
             if (in->header.type == PacketType::MESSAGE_DATA || in->header.type == PacketType::GROUP_MSG) {
                 std::string decrypted = crypto->decrypt_packet(*in);
                 std::string sender(in->header.sender_name);
+                
+                // Get Sender UUID for Dynamic Storage
+                std::stringstream ss_s;
+                ss_uuid_format_client(ss_s, in->header.target_high, in->header.target_low);
+                std::string sender_uuid = ss_s.str();
+
+                // STORE IN DYNAMIC TABLE
+                MessageEntry m; m.sender_uuid = sender_uuid; m.encrypted_payload = in->payload;
+                m.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                local_db.store_message_dynamic(sender_uuid, m);
+
                 if (in->header.type == PacketType::GROUP_MSG) sender = "GROUP:" + sender;
                 dispatcher.push_chat(sender, decrypted);
             } 
-            else if (in->header.type == PacketType::FILE_HEADER) {
-                std::string raw_dec = crypto->decrypt_packet(*in);
-                RawPacket decrypted_header = *in;
-                decrypted_header.payload.assign(raw_dec.begin(), raw_dec.end());
-                files.handle_header(decrypted_header, in->header.sender_name);
-                dispatcher.push_chat("SYSTEM", "Downloading file from " + std::string(in->header.sender_name));
-            }
-            else if (in->header.type == PacketType::FILE_CHUNK) {
-                std::string raw_dec = crypto->decrypt_packet(*in);
-                RawPacket decrypted_chunk = *in;
-                decrypted_chunk.payload.assign(raw_dec.begin(), raw_dec.end());
-                files.handle_chunk(decrypted_chunk, in->header.sender_name);
-            }
             else dispatcher.push(*in);
         }
     });
@@ -100,19 +109,20 @@ int main() {
         manager->send_packet(resp);
     }
 
-    std::cout << "\n--- ALBO Messenger ---\n[1] Login\n[2] Create Account\nChoice: ";
+    std::cout << "\n[1] Login\n[2] Create Account\nChoice: ";
     int choice; std::cin >> choice;
     std::string my_user, my_uuid;
     if (choice == 1) {
         std::string pwd; std::cout << "Username: "; std::cin >> my_user; std::cout << "Password: "; std::cin >> pwd;
         RawPacket p; p.header.type = PacketType::LOGIN_REQUEST;
-        std::string auth = to_lowercase(my_user) + ":" + pwd;
-        p.payload.assign(auth.begin(), auth.end()); p.header.payload_size = p.payload.size();
+        p.payload.assign(my_user.begin(), my_user.end());
+        p.payload.push_back(':'); p.payload.insert(p.payload.end(), pwd.begin(), pwd.end());
+        p.header.payload_size = p.payload.size();
         manager->send_packet(p);
     } else {
         std::string pwd, display; std::cout << "New Username: "; std::cin >> my_user; std::cout << "New Password: "; std::cin >> pwd; std::cout << "Display Name: "; std::cin >> display;
         RawPacket p; p.header.type = PacketType::REGISTER_REQUEST;
-        std::string data = to_lowercase(my_user) + ":" + pwd + ":" + display;
+        std::string data = my_user + ":" + pwd + ":" + display;
         p.payload.assign(data.begin(), data.end()); p.header.payload_size = p.payload.size();
         manager->send_packet(p);
     }
@@ -122,6 +132,7 @@ int main() {
         std::cout << "Auth Failed.\n"; return 0;
     }
     my_uuid = std::string(auth_res->payload.begin(), auth_res->payload.end());
+    ALBO_LOG("Auth Success! Refreshing keys...");
     auto up_p = crypto->generate_prekey_batch(my_uuid);
     RawPacket upload; upload.header.type = PacketType::PREKEY_UPLOAD;
     upload.payload = up_p; upload.header.payload_size = up_p.size();
@@ -141,85 +152,45 @@ int main() {
         std::string input;
         InputResult res = console.process_input(input);
 
-        if (res == InputResult::TEXT) {
-            if (last_target_name.empty()) {
+        if (res == InputResult::TEXT || res == InputResult::COMMAND) {
+            std::string cmd = "";
+            std::string target = last_target_name;
+            std::string text = input;
+
+            if (res == InputResult::COMMAND) {
+                std::stringstream ss(input);
+                ss >> cmd;
+                if (cmd == "/msg") {
+                    ss >> target; std::getline(ss >> std::ws, text);
+                    last_target_name = to_lowercase(target); is_last_group = false;
+                } else if (cmd == "/quit" || cmd == "/exit") break;
+                else continue;
+            }
+
+            if (target.empty()) {
                 console.add_message("SYSTEM", "No active recipient.");
-            } else if (!is_last_group) {
-                RawPacket fetch; fetch.header.type = PacketType::PREKEY_FETCH;
-                fetch.payload.assign(last_target_name.begin(), last_target_name.end()); fetch.header.payload_size = fetch.payload.size();
-                manager->send_packet(fetch);
-                auto pre_res = dispatcher.wait_for_response(1);
-                if (pre_res && pre_res->header.type == PacketType::PREKEY_RESPONSE) {
-                    uint64_t key_id; std::memcpy(&key_id, pre_res->payload.data(), 8);
-                    std::array<uint8_t, 32> t_pub; std::memcpy(t_pub.data(), pre_res->payload.data() + 8, 32);
-                    RawPacket msg = crypto->encrypt_message(input, key_id, t_pub);
-                    std::string pfx = "@" + last_target_name + ":";
-                    msg.payload.insert(msg.payload.begin(), pfx.begin(), pfx.end());
-                    msg.header.payload_size = msg.payload.size();
-                    manager->send_packet(msg);
-                    console.add_message("YOU -> " + last_target_name, input);
-                }
+                continue;
             }
-        }
-        else if (res == InputResult::COMMAND) {
-            std::stringstream ss(input);
-            std::string cmd; ss >> cmd;
-            if (cmd == "/msg") {
-                std::string target, text; ss >> target; std::getline(ss >> std::ws, text);
-                last_target_name = to_lowercase(target); is_last_group = false;
-                RawPacket fetch; fetch.header.type = PacketType::PREKEY_FETCH;
-                fetch.payload.assign(last_target_name.begin(), last_target_name.end()); fetch.header.payload_size = fetch.payload.size();
-                manager->send_packet(fetch);
-                auto pre_res = dispatcher.wait_for_response(2);
-                if (pre_res && pre_res->header.type == PacketType::PREKEY_RESPONSE) {
-                    uint64_t key_id; std::memcpy(&key_id, pre_res->payload.data(), 8);
-                    std::array<uint8_t, 32> t_pub; std::memcpy(t_pub.data(), pre_res->payload.data() + 8, 32);
-                    RawPacket msg = crypto->encrypt_message(text, key_id, t_pub);
-                    std::string pfx = "@" + last_target_name + ":";
-                    msg.payload.insert(msg.payload.begin(), pfx.begin(), pfx.end());
-                    msg.header.payload_size = msg.payload.size();
-                    manager->send_packet(msg);
-                    console.add_message("YOU -> " + last_target_name, text);
-                }
+
+            RawPacket fetch; fetch.header.type = PacketType::PREKEY_FETCH;
+            std::string t_low = to_lowercase(target);
+            fetch.payload.assign(t_low.begin(), t_low.end()); fetch.header.payload_size = fetch.payload.size();
+            manager->send_packet(fetch);
+
+            auto pre_res = dispatcher.wait_for_response(2);
+            if (pre_res && pre_res->header.type == PacketType::PREKEY_RESPONSE) {
+                uint64_t key_id; std::memcpy(&key_id, pre_res->payload.data(), 8);
+                std::array<uint8_t, 32> t_pub; std::memcpy(t_pub.data(), pre_res->payload.data() + 8, 32);
+                
+                RawPacket msg = crypto->encrypt_message(text, key_id, t_pub);
+                std::string pfx = "@" + t_low + ":";
+                msg.payload.insert(msg.payload.begin(), pfx.begin(), pfx.end());
+                msg.header.payload_size = msg.payload.size();
+                manager->send_packet(msg);
+                console.add_message("YOU -> " + t_low, text);
+            } else {
+                console.add_message("SYSTEM", "Error: Recipient offline or no keys.");
             }
-            else if (cmd == "/group") {
-                std::string sub; ss >> sub;
-                if (sub == "msg") {
-                    std::string g_uuid, text; ss >> g_uuid; std::getline(ss >> std::ws, text);
-                    last_target_uuid = g_uuid; is_last_group = true;
-                    RawPacket g; g.header.type = PacketType::GROUP_MSG;
-                    string_to_uuid_parts_client(g_uuid, g.header.target_high, g.header.target_low);
-                    g.payload.assign(text.begin(), text.end()); g.header.payload_size = g.payload.size();
-                    manager->send_packet(g);
-                    console.add_message("YOU -> GROUP:" + g_uuid, text);
-                }
-                else if (sub == "create") {
-                    std::string g_name; std::getline(ss >> std::ws, g_name);
-                    RawPacket g; g.header.type = PacketType::GROUP_CREATE;
-                    g.payload.assign(g_name.begin(), g_name.end()); g.header.payload_size = g.payload.size();
-                    manager->send_packet(g);
-                }
-                else if (sub == "invite") {
-                    std::string user, g_uuid; ss >> user >> g_uuid;
-                    RawPacket g; g.header.type = PacketType::GROUP_INVITE;
-                    std::string pld = user + ":" + g_uuid;
-                    g.payload.assign(pld.begin(), pld.end()); g.header.payload_size = pld.size();
-                    manager->send_packet(g);
-                }
-            }
-            else if (cmd == "/msgfile") {
-                std::string target, path; ss >> target >> path;
-                files.send_file_async(path, target, manager, crypto, &dispatcher);
-                last_target_name = to_lowercase(target); is_last_group = false;
-            }
-            else if (cmd == "/ls") {
-                for (const auto& entry : std::filesystem::directory_iterator(".")) 
-                    console.add_message("FILE", entry.path().filename().string());
-            }
-            else if (cmd == "/help") {
-                console.add_message("HELP", "/msg <user> <text>, /msgfile <user> <path>, /group <create|invite|msg>, /ls, /quit");
-            }
-            else if (cmd == "/quit" || cmd == "/exit") break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }

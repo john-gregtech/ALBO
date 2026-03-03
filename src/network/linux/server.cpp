@@ -32,34 +32,7 @@ namespace prototype::network {
     std::unique_ptr<prototype::network::RateLimiter> global_rate_limiter;
 
     inline int64_t current_time_ms() {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count();
-    }
-
-    void ss_uuid_format(std::stringstream& ss, uint64_t high, uint64_t low) {
-        ss << std::hex << std::setfill('0');
-        ss << std::setw(8) << (uint32_t)(high >> 32) << "-";
-        ss << std::setw(4) << (uint16_t)(high >> 16) << "-";
-        ss << std::setw(4) << (uint16_t)high << "-";
-        ss << std::setw(4) << (uint16_t)(low >> 48) << "-";
-        ss << std::setw(12) << (low & 0xFFFFFFFFFFFFULL);
-    }
-
-    std::string uuid_to_string(const prototype::network::UUID& uuid) {
-        std::stringstream ss;
-        ss_uuid_format(ss, uuid.high, uuid.low);
-        return ss.str();
-    }
-
-    void string_to_uuid_parts(const std::string& uuid_str, uint64_t& high, uint64_t& low) {
-        std::string clean = uuid_str;
-        clean.erase(std::remove(clean.begin(), clean.end(), '-'), clean.end());
-        if (clean.length() != 32) { high = 0; low = 0; return; }
-        try {
-            high = std::stoull(clean.substr(0, 16), nullptr, 16);
-            low = std::stoull(clean.substr(16), nullptr, 16);
-        } catch (...) { high = 0; low = 0; }
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     }
 
     void handle_client(int client_fd, SSL_CTX* ssl_ctx, prototype::database::DatabaseManager* db) {
@@ -71,107 +44,100 @@ namespace prototype::network {
         std::string my_uuid = "";
         std::string my_username = "";
 
-        std::vector<uint8_t> challenge(32);
-        RAND_bytes(challenge.data(), 32);
-        prototype::network::RawPacket p_challenge;
-        p_challenge.header.type = prototype::network::PacketType::AUTH_CHALLENGE;
-        p_challenge.payload = challenge;
-        p_challenge.header.payload_size = 32;
+        std::vector<uint8_t> challenge(32); RAND_bytes(challenge.data(), 32);
+        RawPacket p_challenge; p_challenge.header.type = PacketType::AUTH_CHALLENGE;
+        p_challenge.payload = challenge; p_challenge.header.payload_size = 32;
         manager->send_packet(p_challenge);
 
         while (true) {
             auto packet_opt = manager->receive_packet();
             if (!packet_opt) break;
 
-            prototype::network::RawPacket& packet = *packet_opt;
+            RawPacket& packet = *packet_opt;
 
-            if (packet.header.type == prototype::network::PacketType::LOGIN_REQUEST) {
-                if (auth_service.handle_login(packet, manager, my_uuid, my_username)) {
-                    prototype::network::RawPacket ok; ok.header.type = prototype::network::PacketType::LOGIN_SUCCESS;
-                    ok.payload.assign(my_uuid.begin(), my_uuid.end());
-                    ok.header.payload_size = ok.payload.size();
+            if (packet.header.type == PacketType::LOGIN_REQUEST || packet.header.type == PacketType::REGISTER_REQUEST) {
+                bool success = false;
+                if (packet.header.type == PacketType::LOGIN_REQUEST) success = auth_service.handle_login(packet, manager, my_uuid, my_username);
+                else success = auth_service.handle_registration(packet, manager, my_uuid, my_username);
+
+                if (success) {
+                    RawPacket ok; ok.header.type = (packet.header.type == PacketType::LOGIN_REQUEST) ? PacketType::LOGIN_SUCCESS : PacketType::REGISTER_SUCCESS;
+                    ok.payload.assign(my_uuid.begin(), my_uuid.end()); ok.header.payload_size = ok.payload.size();
                     manager->send_packet(ok);
                     
+                    // PUSH OFFLINE
                     auto offline = db->fetch_and_delete_offline_messages(my_uuid);
                     for (auto& m : offline) {
-                        prototype::network::RawPacket p; p.header.type = prototype::network::PacketType::MESSAGE_DATA;
+                        RawPacket p; p.header.type = PacketType::MESSAGE_DATA;
                         prototype::database::UserEntry sender_data;
-                        if (db->get_user(m.sender_uuid, sender_data)) {
-                            std::strncpy(p.header.sender_name, sender_data.username.c_str(), 15);
-                        }
+                        if (db->get_user(m.sender_uuid, sender_data)) std::strncpy(p.header.sender_name, sender_data.username.c_str(), 15);
                         string_to_uuid_parts(m.sender_uuid, p.header.target_high, p.header.target_low);
-                        p.payload = m.encrypted_payload;
-                        p.header.payload_size = p.payload.size();
+                        p.payload = m.encrypted_payload; p.header.payload_size = p.payload.size();
                         manager->send_packet(p);
                     }
                 } else {
-                    prototype::network::RawPacket fail; fail.header.type = prototype::network::PacketType::LOGIN_FAIL;
+                    RawPacket fail; fail.header.type = (packet.header.type == PacketType::LOGIN_REQUEST) ? PacketType::LOGIN_FAIL : PacketType::REGISTER_FAIL;
                     manager->send_packet(fail);
                 }
             }
-            else if (packet.header.type == prototype::network::PacketType::REGISTER_REQUEST) {
-                if (auth_service.handle_registration(packet, manager, my_uuid, my_username)) {
-                    prototype::network::RawPacket ok; ok.header.type = prototype::network::PacketType::REGISTER_SUCCESS;
-                    ok.payload.assign(my_uuid.begin(), my_uuid.end());
-                    ok.header.payload_size = ok.payload.size();
-                    manager->send_packet(ok);
-                } else {
-                    prototype::network::RawPacket fail; fail.header.type = prototype::network::PacketType::REGISTER_FAIL;
-                    manager->send_packet(fail);
-                }
-            }
-            else if (packet.header.type == prototype::network::PacketType::GROUP_CREATE) {
+            else if (packet.header.type == PacketType::CONTACT_ADD) {
                 if (my_uuid.empty()) continue;
-                std::string g_name(packet.payload.begin(), packet.payload.end());
-                prototype::database::GroupEntry g;
-                g.group_uuid = uuid_to_string(prototype::network::generate_uuid_v4());
-                g.group_name = g_name; g.admin_uuid = my_uuid; g.created_at = current_time_ms();
-                if (db->create_group(g)) {
-                    db->add_group_member(g.group_uuid, my_uuid);
-                    prototype::network::RawPacket res; res.header.type = prototype::network::PacketType::REGISTER_SUCCESS;
-                    res.payload.assign(g.group_uuid.begin(), g.group_uuid.end());
-                    res.header.payload_size = res.payload.size();
-                    manager->send_packet(res);
+                std::string contact_name(packet.payload.begin(), packet.payload.end());
+                contact_name = prototype::network::to_lowercase(contact_name);
+                prototype::database::UserEntry c_user;
+                if (db->get_user_by_name(contact_name, c_user)) {
+                    db->add_user_contact(my_uuid, c_user.uuid, c_user.username);
+                    
+                    // Send back the resolved contact info
+                    RawPacket resp;
+                    resp.header.type = PacketType::CONTACT_ADD; // Use same type to confirm
+                    // Payload: UUID (32 chars) + Name
+                    std::string payload = c_user.uuid + ":" + c_user.username;
+                    resp.payload.assign(payload.begin(), payload.end());
+                    resp.header.payload_size = resp.payload.size();
+                    manager->send_packet(resp);
                 }
             }
-            else if (packet.header.type == prototype::network::PacketType::PREKEY_UPLOAD) {
+            else if (packet.header.type == PacketType::CONTACT_LIST_REQ) {
+                if (my_uuid.empty()) continue;
+                auto contacts = db->get_user_contacts(my_uuid);
+                std::stringstream ss;
+                for (const auto& c : contacts) {
+                    ss << c.uuid << ":" << c.username << ";";
+                }
+                std::string data = ss.str();
+                RawPacket resp;
+                resp.header.type = PacketType::CONTACT_LIST_RESP;
+                resp.payload.assign(data.begin(), data.end());
+                resp.header.payload_size = resp.payload.size();
+                manager->send_packet(resp);
+            }
+            else if (packet.header.type == PacketType::PREKEY_UPLOAD) {
                 if (my_uuid.empty()) continue;
                 for (size_t i = 0; i < packet.payload.size(); i += 32) {
-                    prototype::database::PreKeyEntry key;
-                    key.owner_uuid = my_uuid;
+                    prototype::database::PreKeyEntry key; key.owner_uuid = my_uuid;
                     key.pub_key.assign(packet.payload.begin() + i, packet.payload.begin() + i + 32);
                     db->store_pre_key(key, true);
                 }
             }
-            else if (packet.header.type == prototype::network::PacketType::PREKEY_FETCH) {
+            else if (packet.header.type == PacketType::PREKEY_FETCH) {
                 std::string t_name = prototype::network::to_lowercase(std::string(packet.payload.begin(), packet.payload.end()));
                 prototype::database::UserEntry t_user;
                 if (db->get_user_by_name(t_name, t_user)) {
                     prototype::database::PreKeyEntry key;
                     if (db->get_one_pre_key(t_user.uuid, key)) {
-                        prototype::network::RawPacket res; res.header.type = prototype::network::PacketType::PREKEY_RESPONSE;
+                        RawPacket res; res.header.type = PacketType::PREKEY_RESPONSE;
                         res.payload.resize(8 + 32);
                         std::memcpy(res.payload.data(), &key.key_id, 8);
                         std::memcpy(res.payload.data() + 8, key.pub_key.data(), 32);
                         res.header.payload_size = res.payload.size();
                         manager->send_packet(res);
                         db->delete_pre_key(key.key_id);
-                    } else {
-                        prototype::network::RawPacket f; f.header.type = prototype::network::PacketType::ROUTE_FAIL;
-                        manager->send_packet(f);
-                    }
-                } else {
-                    prototype::network::RawPacket f; f.header.type = prototype::network::PacketType::RESOLVE_FAIL;
-                    manager->send_packet(f);
-                }
+                    } else { RawPacket f; f.header.type = PacketType::ROUTE_FAIL; manager->send_packet(f); }
+                } else { RawPacket f; f.header.type = PacketType::RESOLVE_FAIL; manager->send_packet(f); }
             }
-            // --- GENERIC ROUTING LOOP ---
-            else if (packet.header.type == prototype::network::PacketType::MESSAGE_DATA ||
-                     packet.header.type == prototype::network::PacketType::FILE_HEADER ||
-                     packet.header.type == prototype::network::PacketType::FILE_CHUNK  ||
-                     packet.header.type == prototype::network::PacketType::FILE_FOOTER) {
+            else if (packet.header.type == PacketType::MESSAGE_DATA) {
                 if (my_uuid.empty()) continue;
-                
                 std::string target_uuid = "";
                 std::string payload_str(packet.payload.begin(), packet.payload.end());
                 if (!payload_str.empty() && payload_str[0] == '@') {
@@ -185,39 +151,37 @@ namespace prototype::network {
                             std::string actual_data = payload_str.substr(colon + 1);
                             packet.payload.assign(actual_data.begin(), actual_data.end());
                             packet.header.payload_size = packet.payload.size();
-                        } else {
-                            prototype::network::RawPacket f; f.header.type = prototype::network::PacketType::RESOLVE_FAIL;
-                            manager->send_packet(f); continue;
-                        }
+                        } else { RawPacket f; f.header.type = PacketType::RESOLVE_FAIL; manager->send_packet(f); continue; }
                     }
                 }
-
                 if (target_uuid.empty()) {
                     std::stringstream ss_u; ss_uuid_format(ss_u, packet.header.target_high, packet.header.target_low);
                     target_uuid = ss_u.str();
                 }
-
-                std::memset(packet.header.sender_name, 0, 16);
-                std::strncpy(packet.header.sender_name, my_username.c_str(), 15);
-                string_to_uuid_parts(my_uuid, packet.header.target_high, packet.header.target_low);
+                
+                // Auto-add to address book
+                db->add_user_contact(target_uuid, my_uuid, my_username);
 
                 auto target_manager = global_registry.get_session(target_uuid);
                 if (target_manager) {
-                    ALBO_LOG("[ROUTE] " << my_username << " -> " << global_registry.get_name(target_uuid));
+                    std::memset(packet.header.sender_name, 0, 16);
+                    std::strncpy(packet.header.sender_name, my_username.c_str(), 15);
+                    string_to_uuid_parts(my_uuid, packet.header.target_high, packet.header.target_low);
                     target_manager->send_packet(packet);
                 } else {
-                    ALBO_LOG("[OFFLINE] " << my_username << " -> " << target_uuid);
                     prototype::database::MessageEntry m;
-                    m.sender_uuid = my_uuid; m.target_uuid = target_uuid;
-                    m.encrypted_payload = packet.payload;
+                    m.sender_uuid = my_uuid; 
+                    m.target_uuid = target_uuid;
+                    m.encrypted_payload = packet.payload; 
                     m.timestamp = current_time_ms();
-                    db->store_offline_message(m);
+                    
+                    // The first 8 bytes of payload in current protocol is the PreKey ID
+                    // We'll store it in the public_key field for the client to use
+                    m.public_key.assign(packet.payload.begin(), packet.payload.begin() + 8);
+
+                    db->store_offline_message(m); 
+                    ALBO_LOG("[OFFLINE] Cached for " << target_uuid);
                 }
-            }
-            else if (packet.header.type == prototype::network::PacketType::GROUP_MSG) {
-                if (my_uuid.empty()) continue;
-                std::stringstream ss_g; ss_uuid_format(ss_g, packet.header.target_high, packet.header.target_low);
-                route_service.broadcast_to_group(packet, ss_g.str(), my_uuid, my_username);
             }
         }
         if (!my_uuid.empty()) global_registry.remove_session(my_uuid);
@@ -235,8 +199,7 @@ int main() {
     }
     if (SSL_CTX_use_certificate_file(ssl_ctx, (config_dir + "/server.crt").c_str(), SSL_FILETYPE_PEM) <= 0 ||
         SSL_CTX_use_PrivateKey_file(ssl_ctx, (config_dir + "/server.key").c_str(), SSL_FILETYPE_PEM) <= 0) return 1;
-    prototype::network::ConfigManager config(config_dir + "/server.conf");
-    config.load();
+    prototype::network::ConfigManager config(config_dir + "/server.conf"); config.load();
     prototype::database::DatabaseManager db(config.get("db_path", std::string(getenv("HOME")) + "/.local/share/albo/albo.db"));
     db.initialize();
     prototype::network::global_rate_limiter = std::make_unique<prototype::network::RateLimiter>(100, 60);
@@ -244,7 +207,7 @@ int main() {
     int opt = 1; setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     sockaddr_in addr{}; addr.sin_family = AF_INET; addr.sin_addr.s_addr = INADDR_ANY; addr.sin_port = htons(config.get_int("port", 5555));
     bind(s_fd, (struct sockaddr*)&addr, sizeof(addr)); listen(s_fd, 10);
-    ALBO_LOG("ALBO Secure Messenger Server Started.");
+    ALBO_LOG("ALBO Messenger Server Started.");
     while (true) {
         sockaddr_in c_addr{}; socklen_t len = sizeof(c_addr);
         int c_fd = accept(s_fd, (struct sockaddr*)&c_addr, &len);
