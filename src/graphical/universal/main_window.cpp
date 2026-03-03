@@ -73,8 +73,10 @@ namespace prototype::graphical {
                 chat_display->clear();
                 chat_display->append("<i>SYSTEM: Chat history with " + name + "</i>");
                 auto history = controller->fetchHistory(name.toStdString());
+                std::string my_uuid = controller->getMyUUID();
                 for (auto& h : history) {
-                    chat_display->append("<b>" + name + ":</b> " + QString::fromStdString(std::string(h.encrypted_payload.begin(), h.encrypted_payload.end())));
+                    QString label = (h.sender_uuid == my_uuid) ? "YOU" : name;
+                    chat_display->append("<b>" + label + ":</b> " + QString::fromStdString(std::string(h.encrypted_payload.begin(), h.encrypted_payload.end())));
                 }
             }
         });

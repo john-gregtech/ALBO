@@ -67,6 +67,14 @@ namespace prototype::database {
                 contact_username TEXT NOT NULL,
                 PRIMARY KEY (owner_uuid, contact_uuid)
             );
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_uuid TEXT NOT NULL,
+                target_uuid TEXT NOT NULL,
+                encrypted_payload BLOB NOT NULL,
+                timestamp INTEGER NOT NULL,
+                public_key BLOB
+            );
         )";
         return execute_raw(schema);
     }
@@ -120,7 +128,18 @@ namespace prototype::database {
     }
 
     bool DatabaseManager::store_message(const MessageEntry& msg) {
-        return store_message_dynamic("global_messages", msg);
+        std::lock_guard<std::mutex> lock(db_mutex);
+        const char* sql = "INSERT INTO messages (sender_uuid, target_uuid, encrypted_payload, timestamp, public_key) VALUES (?, ?, ?, ?, ?);";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+        sqlite3_bind_text(stmt, 1, msg.sender_uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, msg.target_uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_blob(stmt, 3, msg.encrypted_payload.data(), (int)msg.encrypted_payload.size(), SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 4, msg.timestamp);
+        sqlite3_bind_blob(stmt, 5, msg.public_key.data(), (int)msg.public_key.size(), SQLITE_STATIC);
+        bool res = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return res;
     }
 
     std::vector<MessageEntry> DatabaseManager::get_messages_by_contact(const std::string& contact_uuid, int limit) {
@@ -128,7 +147,30 @@ namespace prototype::database {
     }
 
     std::vector<MessageEntry> DatabaseManager::get_chat_history(const std::string& u1, const std::string& u2, int limit) {
-        return fetch_all_from_table(u1, false); // Placeholder
+        std::lock_guard<std::mutex> lock(db_mutex);
+        std::vector<MessageEntry> msgs;
+        const char* sql = "SELECT sender_uuid, target_uuid, encrypted_payload, timestamp FROM messages "
+                          "WHERE (sender_uuid = ? AND target_uuid = ?) OR (sender_uuid = ? AND target_uuid = ?) "
+                          "ORDER BY timestamp ASC LIMIT ?;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return msgs;
+        sqlite3_bind_text(stmt, 1, u1.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, u2.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, u2.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, u1.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 5, limit);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            MessageEntry m;
+            m.sender_uuid = (const char*)sqlite3_column_text(stmt, 0);
+            m.target_uuid = (const char*)sqlite3_column_text(stmt, 1);
+            const uint8_t* p = (const uint8_t*)sqlite3_column_blob(stmt, 2);
+            m.encrypted_payload.assign(p, p + sqlite3_column_bytes(stmt, 2));
+            m.timestamp = sqlite3_column_int64(stmt, 3);
+            msgs.push_back(std::move(m));
+        }
+        sqlite3_finalize(stmt);
+        return msgs;
     }
 
     bool DatabaseManager::clear_messages(const std::string& contact_uuid) {

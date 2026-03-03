@@ -126,9 +126,10 @@ namespace prototype::network {
         if (local_db->get_user_by_name(target, user)) {
             prototype::database::MessageEntry entry;
             entry.sender_uuid = my_uuid;
+            entry.target_uuid = user.uuid;
             entry.encrypted_payload.assign(text.begin(), text.end());
             entry.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-            local_db->store_message_dynamic(user.uuid, entry);
+            local_db->store_message(entry);
 
             // Construct and send packet
             prototype::network::RawPacket p;
@@ -148,8 +149,8 @@ namespace prototype::network {
 
     std::vector<prototype::database::MessageEntry> NetworkController::fetchHistory(const std::string& contact_name) {
         prototype::database::UserEntry user;
-        if (local_db->get_user_by_name(contact_name, user)) {
-            return local_db->fetch_all_from_table(user.uuid, false);
+        if (!my_uuid.empty() && local_db->get_user_by_name(contact_name, user)) {
+            return local_db->get_chat_history(my_uuid, user.uuid);
         }
         return {};
     }
@@ -191,9 +192,10 @@ namespace prototype::network {
                 std::string sender_uuid = uuid_to_string(in->header.target_high, in->header.target_low);
                 prototype::database::MessageEntry entry;
                 entry.sender_uuid = sender_uuid;
+                entry.target_uuid = my_uuid;
                 entry.encrypted_payload.assign(decrypted.begin(), decrypted.end());
                 entry.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                local_db->store_message_dynamic(sender_uuid, entry);
+                local_db->store_message(entry);
             }
             else if (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS || in->header.type == prototype::network::PacketType::REGISTER_SUCCESS) {
                 my_uuid.assign(in->payload.begin(), in->payload.end());

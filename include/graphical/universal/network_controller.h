@@ -28,6 +28,8 @@ namespace prototype::network {
         void addContact(const std::string& name);
         void syncPreKeys();
 
+        std::string getMyUUID() const { return my_uuid; }
+
     signals:
         void connectionEstablished();
         void authResult(bool success, QString message);
