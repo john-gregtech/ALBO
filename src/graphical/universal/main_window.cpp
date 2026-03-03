@@ -18,7 +18,11 @@ namespace prototype::graphical {
 
         // Connect Network Signals
         connect(controller, &prototype::network::NetworkController::messageReceived, this, [this](QString sender, QString text) {
-            chat_display->append("<b>" + sender + ":</b> " + text);
+            auto *item = address_book->currentItem();
+            if (item && item->text(0) == sender) {
+                chat_display->append("<b>" + sender + ":</b> " + text);
+            }
+            // In a more advanced version, we could show a notification if it doesn't match
         });
 
         connect(controller, &prototype::network::NetworkController::logMessage, this, [this](QString log) {

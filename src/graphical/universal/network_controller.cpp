@@ -84,6 +84,7 @@ namespace prototype::network {
     void NetworkController::performLogin(const std::string& user, const std::string& pwd) {
         temp_user = user;
         temp_pass = pwd;
+        my_username = user; // Store for later header use
         is_registering = false;
         startKeyExchange();
     }
@@ -91,6 +92,7 @@ namespace prototype::network {
     void NetworkController::performRegistration(const std::string& user, const std::string& pwd) {
         temp_user = user;
         temp_pass = pwd;
+        my_username = user; // Store for later header use
         is_registering = true;
         startKeyExchange();
     }
@@ -200,7 +202,6 @@ namespace prototype::network {
             }
             else if (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS || in->header.type == prototype::network::PacketType::REGISTER_SUCCESS) {
                 my_uuid.assign(in->payload.begin(), in->payload.end());
-                my_username = temp_user; // Store username
                 emit authResult(true, (in->header.type == prototype::network::PacketType::LOGIN_SUCCESS ? "Login Successful" : "Registration Successful"));
                 syncPreKeys();
                 // Request contact list
