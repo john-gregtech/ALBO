@@ -1,0 +1,79 @@
+# ALBO Project - Development & Bug Fix Roadmap
+
+This document outlines the current state of the ALBO project and identifies critical fixes and feature implementations for future development.
+
+## 🔴 High Priority - Critical Fixes
+
+### 1. Fix Messaging & File Transfer (Key Management) [Difficulty: 4/5]
+**Problem:** The current implementation deletes the one-time pre-key after decrypting a single packet. However, file transfers and messaging sequences often reuse the same Key ID for multiple chunks or follow-up messages. This causes decryption to fail after the first packet.
+**Task:**
+- Implement a session-based key management system (Double Ratchet or similar).
+- For file transfers, ensure a persistent session key is used for all chunks instead of a one-time pre-key per chunk.
+- Optimize the ephemeral key generation (currently generating a new X25519 pair for every single chunk is extremely slow).
+
+### 2. Groupchat E2EE Implementation [Difficulty: 5/5]
+**Problem:** Group messaging currently broadcasts the same encrypted blob to all members. Since each member has their own private keys, they cannot decrypt a message not specifically encrypted for them.
+**Task:**
+- Implement the "Sender Key" model: The sender generates a symmetric key, encrypts it for each group member individually (one-time cost), and then uses that symmetric key to broadcast the actual message to the whole group (low cost).
+- Add group member management (invite, kick, admin roles).
+
+### 3. Registration DB Error [Difficulty: 3/5]
+**Problem:** Logs indicate `Registration FAILED: DB Error`. This is likely due to a schema mismatch in `DatabaseManager::upsert_user` or SQLite locking.
+**Task:**
+- Verify the `users` table schema matches the `upsert_user` function.
+- Add more granular error logging in `DatabaseManager` to capture the exact SQLite error string.
+- Ensure the database is initialized correctly on first run.
+
+---
+
+## 🟡 Medium Priority - Essential Features
+
+### 4. Heartbeats / Keep-alive [Difficulty: 3/5]
+**Problem:** The server does not currently detect when a client has disconnected unexpectedly (ghost connections).
+**Task:**
+- Implement a `PING/PONG` mechanism in the protocol.
+- Server should prune inactive sessions from the `SessionRegistry` after a timeout.
+
+### 5. Async I/O Core Transition [Difficulty: 5/5]
+**Problem:** The server currently spawns one thread per client. This will not scale beyond a few hundred users.
+**Task:**
+- Refactor the networking layer to use `epoll` (Linux) and `IOCP` (Windows) or a library like `libuv`/`asio`.
+
+### 6. Database Encryption [Difficulty: 3/5]
+**Problem:** The local SQLite database stores message history and contact lists in plaintext.
+**Task:**
+- Integrate SQLCipher to encrypt the database file using a key derived from the user's password (Argon2id).
+
+---
+
+## 🟢 Low Priority - UI & Polish
+
+### 7. Qt GUI Completion [Difficulty: 4/5]
+**Problem:** The Qt-based GUI is partially implemented but lacks core functionality like a working contact list and threaded message view.
+**Task:**
+- Connect the `MainWindow` logic to the `Client` network backend.
+- Implement a proper scrollable message history widget.
+
+### 8. Rotating Logs [Difficulty: 2/5]
+**Problem:** `server_debug.log` can grow indefinitely.
+**Task:**
+- Implement a simple log rotator that archives old logs and starts fresh ones based on size or date.
+
+### 9. Cross-Platform Unification [Difficulty: 3/5]
+**Task:**
+- Clean up the `network/linux` and `network/win` split. Move as much logic as possible into `network/universal` to reduce code duplication.
+
+---
+
+## 🛠️ Summary for Coworkers
+
+| Task | Difficulty | Impact |
+| :--- | :---: | :---: |
+| Fix Messaging/File Transfer | 4/5 | 🔥 Critical |
+| Groupchat E2EE | 5/5 | 🚀 Major Feature |
+| Fix Registration DB Error | 3/5 | 🐛 Bug Fix |
+| Heartbeats | 3/5 | 🛡️ Stability |
+| Async I/O Core | 5/5 | 📈 Scalability |
+| Database Encryption | 3/5 | 🔒 Security |
+| Qt GUI Completion | 4/5 | 🎨 UX |
+| Rotating Logs | 2/5 | 🧹 Maintenance |
