@@ -1,0 +1,10 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/linuxnoob/Documents/c++/openGL_GUI/build/cmake_install.cmake",
+		"C:/Users/linuxnoob/Documents/c++/openGL_GUI/build/_deps/glfw-build/cmake_install.cmake",
+		"C:/Users/linuxnoob/Documents/c++/openGL_GUI/build/_deps/glfw-build/src/cmake_install.cmake",
+		"C:/Users/linuxnoob/Documents/c++/openGL_GUI/build/_deps/freetype-build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

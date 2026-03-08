@@ -1,0 +1,1 @@
+ libOpenGLGUI.a "_deps/glfw-build/src/libglfw3.a" libglad.a "_deps/freetype-build/libfreetype.a" C:/msys64/mingw64/lib/libharfbuzz.dll.a C:/msys64/mingw64/lib/libbrotlidec.dll.a -lopengl32 -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

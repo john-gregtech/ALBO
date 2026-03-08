@@ -1,0 +1,2 @@
+C:\msys64\mingw64\bin\ar.exe qc libOpenGLGUI.a CMakeFiles/OpenGLGUI.dir/src/GUILibrary.cpp.obj CMakeFiles/OpenGLGUI.dir/src/RenderManager.cpp.obj CMakeFiles/OpenGLGUI.dir/src/InputManager.cpp.obj CMakeFiles/OpenGLGUI.dir/src/TextManager.cpp.obj
+C:\msys64\mingw64\bin\ranlib.exe libOpenGLGUI.a

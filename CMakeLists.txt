@@ -16,10 +16,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---- Discovery ----
 find_package(OpenSSL REQUIRED COMPONENTS Crypto SSL)
 find_package(SQLite3 REQUIRED)
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 # ---- Include Path (Base include/ directory) ----
 set(BASE_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
+
+# ---- External Libraries ----
+add_subdirectory("external libraries/openGL_GUI")
 
 # ---- Library Sources (Shared across platforms) ----
 set(CRYPTO_SOURCES
@@ -71,10 +73,24 @@ if (UNIX OR WIN32)
     endif()
     target_link_libraries(ALBO PRIVATE OpenSSL::Crypto OpenSSL::SSL SQLite::SQLite3 argon2)
     target_include_directories(ALBO PRIVATE ${BASE_INCLUDE_DIR})
+
+    # 2. ALBO NEW GUI (Replacing Qt with OpenGLGUI)
+    add_executable(ALBO_GUI
+        src/universal/main_gl.cpp
+        ${CRYPTO_SOURCES}
+    )
+    if (UNIX)
+        target_sources(ALBO_GUI PRIVATE ${NETWORK_SOURCES_UNIX})
+    else()
+        target_sources(ALBO_GUI PRIVATE ${NETWORK_SOURCES_WIN})
+        target_link_libraries(ALBO_GUI PRIVATE ws2_32)
+    endif()
+    target_link_libraries(ALBO_GUI PRIVATE OpenGLGUI OpenSSL::Crypto OpenSSL::SSL SQLite::SQLite3 argon2)
+    target_include_directories(ALBO_GUI PRIVATE ${BASE_INCLUDE_DIR})
 endif()
 
 if (UNIX)
-    # 2. LINUX SERVER
+    # 3. LINUX SERVER
     add_executable(LINUXSERVER
         src/linux/network/server.cpp
         ${CRYPTO_SOURCES}
@@ -83,7 +99,7 @@ if (UNIX)
     target_link_libraries(LINUXSERVER PRIVATE OpenSSL::Crypto OpenSSL::SSL SQLite::SQLite3 argon2)
     target_include_directories(LINUXSERVER PRIVATE ${BASE_INCLUDE_DIR})
 
-    # 3. LINUX CLIENT (TUI)
+    # 4. LINUX CLIENT (TUI)
     add_executable(LINUXCLIENT
         src/linux/network/client.cpp
         src/linux/network/console_manager.cpp
@@ -93,29 +109,9 @@ if (UNIX)
     )
     target_link_libraries(LINUXCLIENT PRIVATE OpenSSL::Crypto OpenSSL::SSL SQLite::SQLite3 argon2)
     target_include_directories(LINUXCLIENT PRIVATE ${BASE_INCLUDE_DIR})
-
-    # 4. LINUX CLIENT GUI (Qt)
-    add_executable(LINUX_CLIENT_GUI
-        src/linux/graphical/main.cpp
-        src/universal/graphical/main_window.cpp
-        src/universal/graphical/network_controller.cpp
-        src/universal/graphical/login_dialog.cpp
-        # Include headers for AUTOMOC
-        include/universal/graphical/main_window.h
-        include/universal/graphical/network_controller.h
-        include/universal/graphical/login_dialog.h
-        src/linux/network/file_transfer_manager.cpp
-        ${CRYPTO_SOURCES}
-        ${NETWORK_SOURCES_UNIX}
-    )
-    target_link_libraries(LINUX_CLIENT_GUI PRIVATE 
-        OpenSSL::Crypto OpenSSL::SSL SQLite::SQLite3 argon2 Qt6::Widgets
-    )
-    target_include_directories(LINUX_CLIENT_GUI PRIVATE ${BASE_INCLUDE_DIR})
-    set_target_properties(LINUX_CLIENT_GUI PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON)
 endif()
 
-# 5. WINDOWS CLIENT
+# 5. WINDOWS CLIENTS
 if (WIN32)
     add_executable(WINCLIENT
         src/win/network/client.cpp
@@ -132,43 +128,17 @@ if (WIN32)
     )
     target_link_libraries(WINSERVER PRIVATE OpenSSL::Crypto OpenSSL::SSL SQLite::SQLite3 argon2 ws2_32 kernel32 user32)
     target_include_directories(WINSERVER PRIVATE ${BASE_INCLUDE_DIR})
-
-    # Windows GUI Client
-    if (Qt6_FOUND)
-        add_executable(WIN_CLIENT_GUI WIN32
-            src/linux/graphical/main.cpp
-            src/universal/graphical/main_window.cpp
-            src/universal/graphical/network_controller.cpp
-            src/universal/graphical/login_dialog.cpp
-            # Include headers for AUTOMOC
-            include/universal/graphical/main_window.h
-            include/universal/graphical/network_controller.h
-            include/universal/graphical/login_dialog.h
-            src/linux/network/file_transfer_manager.cpp
-            ${CRYPTO_SOURCES}
-            ${NETWORK_SOURCES_WIN}
-        )
-        target_link_libraries(WIN_CLIENT_GUI PRIVATE 
-            OpenSSL::Crypto OpenSSL::SSL SQLite::SQLite3 argon2 Qt6::Widgets ws2_32 kernel32 user32
-        )
-        target_include_directories(WIN_CLIENT_GUI PRIVATE ${BASE_INCLUDE_DIR})
-        set_target_properties(WIN_CLIENT_GUI PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON)
-    endif()
 endif()
 
 # Global Output settings
 if (UNIX)
-    if (TARGET ALBO)
-        set_target_properties(ALBO PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
-    endif()
+    set_target_properties(ALBO PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+    set_target_properties(ALBO_GUI PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
     if (TARGET LINUXSERVER)
         set_target_properties(LINUXSERVER PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
     endif()
     if (TARGET LINUXCLIENT)
         set_target_properties(LINUXCLIENT PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
-    endif()
-    if (TARGET LINUX_CLIENT_GUI)
-        set_target_properties(LINUX_CLIENT_GUI PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
     endif()
 endif()
 
@@ -195,20 +165,7 @@ if (WIN32)
     endmacro()
 
     setup_windows_target(ALBO)
+    setup_windows_target(ALBO_GUI)
     setup_windows_target(WINCLIENT)
     setup_windows_target(WINSERVER)
-
-    if (TARGET WIN_CLIENT_GUI)
-        set_target_properties(WIN_CLIENT_GUI PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin/WIN_CLIENT_GUI)
-        # For Qt, we use windeployqt
-        add_custom_command(TARGET WIN_CLIENT_GUI POST_BUILD
-            COMMAND C:/msys64/mingw64/bin/windeployqt6.exe "$<TARGET_FILE:WIN_CLIENT_GUI>"
-        )
-        # Also copy our non-Qt dependencies
-        foreach(DLL ${WIN_DLLS})
-            add_custom_command(TARGET WIN_CLIENT_GUI POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL}" "$<TARGET_FILE_DIR:WIN_CLIENT_GUI>"
-            )
-        endforeach()
-    endif()
 endif()

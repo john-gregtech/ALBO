@@ -19,28 +19,7 @@ namespace prototype::graphical {
 
         // --- Network Signals ---
 
-        // historyChanged is emitted whenever the DB is updated for a specific contact
-        connect(controller, &prototype::network::NetworkController::historyChanged, this, [this](QString name) {
-            if (!current_contact.isEmpty() && current_contact.compare(name, Qt::CaseInsensitive) == 0) {
-                // Refresh full chat view from DB
-                refreshChatUI(name);
-                controller->markHistoryClean(name.toStdString());
-            } else {
-                // Bold the name in the contact list if it's not the current active chat
-                for(int i = 0; i < contacts_root->childCount(); ++i) {
-                    auto *child = contacts_root->child(i);
-                    if (child->text(0).compare(name, Qt::CaseInsensitive) == 0) {
-                        QFont font = child->font(0);
-                        font.setBold(true);
-                        child->setFont(0, font);
-                        break;
-                    }
-                }
-            }
-        });
-
         connect(controller, &prototype::network::NetworkController::logMessage, this, [this](QString log) {
-            // Filter out "Sent message to" logs
             if (!log.contains("Sent message to", Qt::CaseInsensitive)) {
                 chat_display->append("<i>SYSTEM: " + log + "</i>");
             }
@@ -74,11 +53,7 @@ namespace prototype::graphical {
         connect(send_button, &QPushButton::clicked, this, [this]() {
             QString text = input_box->text();
             if (text.isEmpty()) return;
-            
-            if (current_contact.isEmpty()) {
-                QMessageBox::warning(this, "No Recipient", "Select a contact or group first.");
-                return;
-            }
+            if (current_contact.isEmpty()) return;
 
             controller->sendMessage(current_contact.toStdString(), text.toStdString());
             input_box->clear();
@@ -86,13 +61,11 @@ namespace prototype::graphical {
 
         update_account_state(false); 
         
-        // Load history on selection
         connect(address_book, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column) {
             if (item->parent() == contacts_root || item->parent() == groups_root) {
                 QString name = item->text(0);
                 current_contact = name;
                 
-                // Reset font to normal (Mark as Read)
                 QFont font = item->font(0);
                 font.setBold(false);
                 item->setFont(0, font);
@@ -105,13 +78,47 @@ namespace prototype::graphical {
             }
         });
 
+        // --- Main Loop Timer (500ms check) ---
+        update_timer = new QTimer(this);
+        connect(update_timer, &QTimer::timeout, this, &MainWindow::onUpdateCheck);
+        update_timer->start(500);
+
         controller->connectToServer(ALBO_DEFAULT_IP, ALBO_DEFAULT_PORT);
     }
 
     MainWindow::~MainWindow() = default;
 
-    void MainWindow::startRefreshThread(const QString& name) {}
-    void MainWindow::stopRefreshThread() {}
+    void MainWindow::onUpdateCheck() {
+        bool changed = false;
+        
+        auto check_list = [&](QTreeWidgetItem* root) {
+            for(int i = 0; i < root->childCount(); ++i) {
+                auto *child = root->child(i);
+                QString name = child->text(0);
+                
+                if (controller->isHistoryDirty(name.toStdString())) {
+                    if (!current_contact.isEmpty() && current_contact.compare(name, Qt::CaseInsensitive) == 0) {
+                        refreshChatUI(name);
+                        controller->markHistoryClean(name.toStdString());
+                    } else {
+                        QFont font = child->font(0);
+                        if (!font.bold()) {
+                            font.setBold(true);
+                            child->setFont(0, font);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        };
+
+        check_list(contacts_root);
+        check_list(groups_root);
+
+        if (changed) {
+            address_book->viewport()->update();
+        }
+    }
 
     void MainWindow::refreshChatUI(const QString& name) {
         chat_display->clear();
@@ -225,8 +232,13 @@ namespace prototype::graphical {
         controller->performLogout();
         update_account_state(false);
         current_contact = "";
+        
+        // Clear Contact List
+        contacts_root->takeChildren();
+        groups_root->takeChildren();
+        
         chat_display->clear();
-        chat_display->append("<i>SYSTEM: Logged out.</i>");
+        chat_display->append("<i>SYSTEM: Logged out. All session data cleared from memory.</i>");
     }
 
     void MainWindow::onStatus() {

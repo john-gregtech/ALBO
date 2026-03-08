@@ -5,6 +5,7 @@
 #include "universal/cryptowrapper/aes256.h"
 #include "universal/cryptowrapper/sha256.h"
 #include <thread>
+#include <algorithm>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -45,14 +46,16 @@ namespace prototype::network {
     }
 
     bool NetworkController::isHistoryDirty(const std::string& contact_name) {
+        std::string lower = prototype::network::to_lowercase(contact_name);
         std::lock_guard<std::mutex> lock(history_mtx);
-        if (dirty_map.count(contact_name)) return dirty_map[contact_name];
+        if (dirty_map.count(lower)) return dirty_map[lower];
         return false;
     }
 
     void NetworkController::markHistoryClean(const std::string& contact_name) {
+        std::string lower = prototype::network::to_lowercase(contact_name);
         std::lock_guard<std::mutex> lock(history_mtx);
-        dirty_map[contact_name] = false;
+        dirty_map[lower] = false;
     }
 
     void NetworkController::connectToServer(const std::string& ip, int port) {
@@ -130,13 +133,25 @@ namespace prototype::network {
     }
 
     void NetworkController::performLogout() {
-        if (!manager) return;
-        prototype::network::RawPacket p;
-        p.header.type = prototype::network::PacketType::DISCONNECT;
-        manager->send_packet(p);
+        if (manager) {
+            prototype::network::RawPacket p;
+            p.header.type = prototype::network::PacketType::DISCONNECT;
+            manager->send_packet(p);
+        }
+        
         my_uuid.clear();
         my_username.clear();
         session_key.clear();
+        temp_user.clear();
+        temp_pass.clear();
+        std::memset(ephemeral_keys.priv.data(), 0, 32);
+        std::memset(ephemeral_keys.pub.data(), 0, 32);
+
+        {
+            std::lock_guard<std::mutex> lock(history_mtx);
+            dirty_map.clear();
+        }
+
         emit logMessage("Session terminated with server.");
     }
 
@@ -154,7 +169,7 @@ namespace prototype::network {
 
             {
                 std::lock_guard<std::mutex> lock(history_mtx);
-                dirty_map[target] = true;
+                dirty_map[prototype::network::to_lowercase(target)] = true;
             }
             emit historyChanged(QString::fromStdString(target));
 
@@ -214,7 +229,6 @@ namespace prototype::network {
                 std::string sender_name = in->header.sender_name;
                 std::string sender_uuid = uuid_to_string(in->header.target_high, in->header.target_low);
 
-                // 1. Ensure contact exists in DB
                 prototype::database::UserEntry dummy;
                 if (!local_db->get_user(sender_uuid, dummy)) {
                     prototype::database::UserEntry neu;
@@ -226,7 +240,6 @@ namespace prototype::network {
                     emit contactAdded(QString::fromStdString(sender_uuid), QString::fromStdString(sender_name));
                 }
 
-                // 2. Persist message to DB BEFORE signaling
                 prototype::database::MessageEntry entry;
                 entry.sender_uuid = sender_uuid;
                 entry.target_uuid = my_uuid;
@@ -234,10 +247,9 @@ namespace prototype::network {
                 entry.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 local_db->store_message(entry);
 
-                // 3. Mark dirty and signal
                 {
                     std::lock_guard<std::mutex> lock(history_mtx);
-                    dirty_map[sender_name] = true;
+                    dirty_map[prototype::network::to_lowercase(sender_name)] = true;
                 }
                 emit historyChanged(QString::fromStdString(sender_name));
                 emit messageReceived(QString::fromStdString(sender_name), QString::fromStdString(decrypted));

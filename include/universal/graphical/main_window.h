@@ -10,8 +10,7 @@
 #include <QMenuBar>
 #include <QToolBar>
 #include <QTreeWidget>
-#include <thread>
-#include <atomic>
+#include <QTimer>
 
 namespace prototype::network { class NetworkController; }
 
@@ -32,18 +31,13 @@ namespace prototype::graphical {
         void onLogin();
         void onLogout();
         void onStatus();
+        void onUpdateCheck(); // Periodic UI sync
 
     private:
         prototype::network::NetworkController *controller;
         QString current_contact;
+        QTimer *update_timer;
         
-        // Refresh Thread
-        std::thread refresh_thread;
-        std::atomic<bool> stop_refresh{false};
-        void startRefreshThread(const QString& contact_name);
-        void stopRefreshThread();
-        void refreshChatUI(const QString& name);
-
         // Account Menu Actions
         QAction *act_login;
         QAction *act_logout;
@@ -62,6 +56,7 @@ namespace prototype::graphical {
         void setup_ui();
         void setup_menus();
         void update_account_state(bool logged_in);
+        void refreshChatUI(const QString& name);
     };
 
 }
